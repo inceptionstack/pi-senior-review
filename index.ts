@@ -476,8 +476,32 @@ export default function (pi: ExtensionAPI) {
         updateStatus(ctx);
 
         try {
-          // Get the diff for the last N commits
-          const diffResult = await pi.exec("git", ["diff", `HEAD~${count}`, "HEAD"], {
+          // Check how many commits exist and clamp
+          const countResult = await pi.exec("git", ["rev-list", "--count", "HEAD"], {
+            timeout: 5000,
+          });
+          const totalCommits = parseInt(countResult.stdout.trim(), 10) || 0;
+
+          if (totalCommits === 0) {
+            ctx.ui.notify("No commits found in this repo.", "warning");
+            return;
+          }
+
+          const effectiveCount = Math.min(count, totalCommits);
+          if (effectiveCount < count) {
+            ctx.ui.notify(
+              `Repo has ${totalCommits} commit${totalCommits > 1 ? "s" : ""}. Reviewing all.`,
+              "info",
+            );
+          }
+
+          // Use --root-compatible diff: for all commits, diff against empty tree
+          const diffArgs =
+            effectiveCount >= totalCommits
+              ? ["diff", "4b825dc642cb6eb9a060e54bf899d69f7cb0cb10", "HEAD"]
+              : ["diff", `HEAD~${effectiveCount}`, "HEAD"];
+
+          const diffResult = await pi.exec("git", diffArgs, {
             timeout: 15000,
           });
 
@@ -496,7 +520,7 @@ export default function (pi: ExtensionAPI) {
           }
 
           // Get commit messages for context
-          const logResult = await pi.exec("git", ["log", `--oneline`, `-${count}`], {
+          const logResult = await pi.exec("git", ["log", `--oneline`, `-${effectiveCount}`], {
             timeout: 5000,
           });
           const commitLog = logResult.stdout.trim();
@@ -510,7 +534,7 @@ export default function (pi: ExtensionAPI) {
               : diff;
 
           const reviewPrompt = buildReviewPrompt();
-          const prompt = `${reviewPrompt}\n\n---\n\nReview the following git diff (last ${count} commit${count > 1 ? "s" : ""}):\n\nCommits:\n${commitLog}\n\nDiff:\n\`\`\`diff\n${truncatedDiff}\n\`\`\``;
+          const prompt = `${reviewPrompt}\n\n---\n\nReview the following git diff (last ${effectiveCount} commit${effectiveCount > 1 ? "s" : ""}):\n\nCommits:\n${commitLog}\n\nDiff:\n\`\`\`diff\n${truncatedDiff}\n\`\`\``;
 
           const authStorage = AuthStorage.create();
           const modelRegistry = ModelRegistry.create(authStorage);
@@ -566,7 +590,7 @@ export default function (pi: ExtensionAPI) {
             pi.sendMessage(
               {
                 customType: "code-review",
-                content: `\u2705 **Code Review** (last ${count} commit${count > 1 ? "s" : ""})\n\nReview found no issues. Looks good!`,
+                content: `\u2705 **Code Review** (last ${effectiveCount} commit${effectiveCount > 1 ? "s" : ""})\n\nReview found no issues. Looks good!`,
                 display: true,
               },
               { triggerTurn: false, deliverAs: "followUp" },
@@ -575,7 +599,7 @@ export default function (pi: ExtensionAPI) {
             pi.sendMessage(
               {
                 customType: "code-review",
-                content: `\ud83d\udd0d **Code Review** (last ${count} commit${count > 1 ? "s" : ""})\n\n${reviewText}\n\nPlease review these findings and fix any valid issues.\n\n\u26a0\ufe0f **Do NOT push to remote yet.** Fix any issues first. Do NOT push after fixing either \u2014 a new review cycle will check your fixes automatically.`,
+                content: `\ud83d\udd0d **Code Review** (last ${effectiveCount} commit${effectiveCount > 1 ? "s" : ""})\n\n${reviewText}\n\nPlease review these findings and fix any valid issues.\n\n\u26a0\ufe0f **Do NOT push to remote yet.** Fix any issues first. Do NOT push after fixing either \u2014 a new review cycle will check your fixes automatically.`,
                 display: true,
               },
               { triggerTurn: true, deliverAs: "followUp" },

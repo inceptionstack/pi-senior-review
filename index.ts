@@ -63,7 +63,28 @@ export default function (pi: ExtensionAPI) {
   const detectedGitRoots = new Set<string>(); // git repos discovered from file paths or bash git commands
   const pendingArgs = new Map<string, { name: string; input: any }>();
 
-  // ── Helpers ────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────
+
+  /**
+   * Build ReviewOptions for runReviewSession from current settings + call-site args.
+   * Centralizes option wiring so adding a new setting only requires one edit.
+   */
+  function buildReviewOptions(
+    signal: AbortSignal,
+    cwd: string,
+    filesReviewed: string[],
+    onActivity?: (desc: string) => void,
+  ) {
+    return {
+      signal,
+      cwd,
+      model: settings.model,
+      thinkingLevel: settings.thinkingLevel,
+      timeoutMs: settings.reviewTimeoutMs,
+      filesReviewed,
+      onActivity,
+    };
+  }──
 
   function resetTrackingState(ctx: { ui: any; hasUI?: boolean }) {
     agentToolCalls = [];
@@ -217,13 +238,10 @@ export default function (pi: ExtensionAPI) {
                 updateStatus(ctx, "analyzing…");
                 const prompt = `${buildReviewPrompt(customRules)}\n\n---\n\n${best.content}`;
                 log("prompt length:", prompt.length);
-                const result = await runReviewSession(prompt, {
-                  signal: reviewAbort.signal,
-                  cwd: ctx.cwd,
-                  model: settings.model,
-                  thinkingLevel: settings.thinkingLevel,
-                  onActivity: (desc) => updateStatus(ctx, desc),
-                });
+                const result = await runReviewSession(
+                  prompt,
+                  buildReviewOptions(reviewAbort.signal, ctx.cwd, best.files, (desc) => updateStatus(ctx, desc)),
+                );
                 log("result:", { isLgtm: result.isLgtm, durationMs: result.durationMs, textLen: result.text.length });
                 if (result.isLgtm) reviewLoopCount = 0;
                 sendReviewResult(pi, result, best.label, { reviewedFiles: best.files });
@@ -236,7 +254,7 @@ export default function (pi: ExtensionAPI) {
                 ctx.ui.notify("Auto-review cancelled", "info");
               } else {
                 const errMsg = err?.message ?? String(err);
-                console.error("[auto-review] Review failed:", errMsg);
+                log(`ERROR: Review failed: ${errMsg}`);
                 ctx.ui.notify(`Auto-review error: ${errMsg.slice(0, 200)}`, "error");
               }
             } finally {
@@ -268,9 +286,7 @@ export default function (pi: ExtensionAPI) {
         else modifiedFiles.add("(bash file op)");
       } else if (!fileCapWarned) {
         fileCapWarned = true;
-        console.log(
-          `[auto-review] File tracking cap reached (${MAX_TRACKED_FILES}). Additional files won't be tracked.`,
-        );
+        log(`File tracking cap reached (${MAX_TRACKED_FILES}). Additional files won't be tracked.`);
       }
       updateStatus(ctx);
     }
@@ -397,23 +413,18 @@ export default function (pi: ExtensionAPI) {
       // Skip if we've already reviewed this exact content
       const contentHash = createHash("sha256").update(best.content).digest("hex");
       if (contentHash === lastReviewedContentHash) {
-        console.log("[auto-review] Skipping — same content as last review");
+        log("Skipping — same content as last review");
         resetTrackingState(ctx);
         return;
       }
 
       updateStatus(ctx, "analyzing…");
-      console.log(
-        `[auto-review] Reviewing ${best.files.length} files via ${best.label || "git diff"}: ${best.files.join(", ")}`,
-      );
+      log(`Reviewing ${best.files.length} files via ${best.label || "git diff"}: ${best.files.join(", ")}`);
       const prompt = `${buildReviewPrompt(customRules)}\n\n---\n\n${best.content}`;
-      const result = await runReviewSession(prompt, {
-        signal: reviewAbort.signal,
-        cwd: ctx.cwd,
-        model: settings.model,
-        thinkingLevel: settings.thinkingLevel,
-        onActivity: (desc) => updateStatus(ctx, desc),
-      });
+      const result = await runReviewSession(
+        prompt,
+        buildReviewOptions(reviewAbort.signal, ctx.cwd, best.files, (desc) => updateStatus(ctx, desc)),
+      );
 
       // Track change summary for roundup
       sessionChangeSummaries.push(best.content.slice(0, 5000));
@@ -426,7 +437,7 @@ export default function (pi: ExtensionAPI) {
         // Check if roundup review should trigger:
         // - More than 1 review loop happened (fixes were made)
         // - Roundup hasn't already run this cycle
-        if (peakReviewLoopCount >= 1 && !roundupDone) {
+        if (settings.roundupEnabled && peakReviewLoopCount >= 1 && !roundupDone) {
           roundupDone = true;
           reviewLoopCount = 0;
           sendReviewResult(pi, result, "", { reviewedFiles: best.files });
@@ -446,7 +457,7 @@ export default function (pi: ExtensionAPI) {
             });
           } catch (err: any) {
             if (err?.message !== "Review cancelled") {
-              console.error("[auto-review] Roundup review failed:", err);
+              log(`ERROR: Roundup review failed: ${err?.message ?? err}`);
             }
           }
         } else {
@@ -466,7 +477,7 @@ export default function (pi: ExtensionAPI) {
         if (ctx.hasUI) ctx.ui.notify("Auto-review cancelled", "info");
       } else {
         const errMsg = err?.message ?? String(err);
-        console.error("[auto-review] Review failed:", errMsg);
+        log(`ERROR: Review failed: ${errMsg}`);
         if (ctx.hasUI) ctx.ui.notify(`Auto-review error: ${errMsg.slice(0, 200)}`, "error");
         pi.sendMessage(
           {
@@ -488,7 +499,7 @@ export default function (pi: ExtensionAPI) {
     description: "Cancel in-progress code review",
     handler: async (ctx) => {
       if (isReviewing && reviewAbort) {
-        console.log("[auto-review] Cancel requested via Ctrl+Alt+R");
+        log("Cancel requested via Ctrl+Alt+R");
         reviewAbort.abort();
         if (ctx.hasUI) ctx.ui.notify("Auto-review cancelled", "info");
       }
@@ -498,7 +509,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerShortcut("ctrl+alt+shift+r", {
     description: "Full reset: cancel review, reset loop count, clear tracked files",
     handler: async (ctx) => {
-      console.log("[auto-review] Full reset via Ctrl+Alt+Shift+R");
+      log("Full reset via Ctrl+Alt+Shift+R");
       if (isReviewing && reviewAbort) {
         reviewAbort.abort();
       }
@@ -550,7 +561,7 @@ export default function (pi: ExtensionAPI) {
           timeout: 5000,
         });
         if (countResult.code !== 0)
-          console.log(`[auto-review] git rev-list failed: ${countResult.stderr.trim()}`);
+          log(`git rev-list failed: ${countResult.stderr.trim()}`);
 
         const totalCommits = parseInt(countResult.stdout.trim(), 10) || 0;
         if (totalCommits === 0) {
@@ -613,19 +624,17 @@ export default function (pi: ExtensionAPI) {
         const commitLabel = `last ${effectiveCount} commit${effectiveCount > 1 ? "s" : ""}`;
 
         const prompt = `${buildReviewPrompt(customRules)}\n\n---\n\nReview the following git diff (${commitLabel}):\n\nCommits:\n${commitLog}\n\nDiff:\n\`\`\`diff\n${truncatedDiff}\n\`\`\``;
-        const result = await runReviewSession(prompt, {
-          signal: reviewAbort!.signal,
-          cwd: ctx.cwd,
-          model: settings.model,
-          thinkingLevel: settings.thinkingLevel,
-        });
+        const result = await runReviewSession(
+          prompt,
+          buildReviewOptions(reviewAbort!.signal, ctx.cwd, changedFiles),
+        );
 
         sendReviewResult(pi, result, commitLabel);
       } catch (err: any) {
         if (err?.message === "Review cancelled") {
           ctx.ui.notify("Review cancelled", "info");
         } else {
-          console.error("[auto-review] commit review failed:", err);
+          log(`ERROR: commit review failed: ${err?.message ?? err}`);
           ctx.ui.notify(`Review failed: ${err?.message ?? err}`, "error");
         }
       } finally {
@@ -656,21 +665,19 @@ export default function (pi: ExtensionAPI) {
     settings = settingsResult.settings;
 
     if (customRules)
-      console.log("[auto-review] Loaded custom rules from .autoreview/review-rules.md");
-    if (roundupRules) console.log("[auto-review] Loaded roundup rules from .autoreview/roundup.md");
+      log("Loaded custom rules from .autoreview/review-rules.md");
+    if (roundupRules) log("Loaded roundup rules from .autoreview/roundup.md");
     if (ignorePatterns)
-      console.log(
-        `[auto-review] Loaded ${ignorePatterns.length} ignore pattern(s) from .autoreview/ignore`,
-      );
+      log(`Loaded ${ignorePatterns.length} ignore pattern(s) from .autoreview/ignore`);
     for (const err of settingsResult.errors) {
-      console.log(err);
+      log(err);
       if (ctx.hasUI) ctx.ui.notify(err, "warning");
     }
     if (settingsResult.errors.length === 0) {
       if (settings.maxReviewLoops !== DEFAULT_SETTINGS.maxReviewLoops) {
-        console.log(`[auto-review] maxReviewLoops = ${settings.maxReviewLoops}`);
+        log(`maxReviewLoops = ${settings.maxReviewLoops}`);
       }
-      console.log(`[auto-review] reviewer model: ${settings.model}, thinking: ${settings.thinkingLevel}`);
+      log(`reviewer model: ${settings.model}, thinking: ${settings.thinkingLevel}`);
     }
 
     updateStatus(ctx);

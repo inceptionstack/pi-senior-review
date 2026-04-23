@@ -14,6 +14,7 @@
 
 import { readFile } from "node:fs/promises";
 import { join, basename } from "node:path";
+import { log } from "./logger";
 
 /**
  * Parse an ignore file into a list of patterns.
@@ -25,7 +26,7 @@ export async function loadIgnorePatterns(cwd: string): Promise<string[] | null> 
     return parseIgnoreFile(content);
   } catch (err: any) {
     if (err?.code === "ENOENT") return null;
-    console.log(`[auto-review] Warning: could not read .autoreview/ignore: ${err?.message}`);
+    log(`Warning: could not read .autoreview/ignore: ${err?.message}`);
     return null;
   }
 }

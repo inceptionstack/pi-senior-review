@@ -136,4 +136,28 @@ describe("parseSettings", () => {
     parseSettings({ maxReviewLoops: 999 });
     expect(DEFAULT_SETTINGS).toEqual(before);
   });
+
+  it("parseSettings_ValidReviewTimeoutMs_Applies", () => {
+    const { settings, errors } = parseSettings({ reviewTimeoutMs: 300_000 });
+    expect(settings.reviewTimeoutMs).toBe(300_000);
+    expect(errors).toEqual([]);
+  });
+
+  it("parseSettings_ZeroReviewTimeoutMs_RejectsWithError", () => {
+    const { settings, errors } = parseSettings({ reviewTimeoutMs: 0 });
+    expect(settings.reviewTimeoutMs).toBe(DEFAULT_SETTINGS.reviewTimeoutMs);
+    expect(errors.length).toBe(1);
+  });
+
+  it("parseSettings_NegativeReviewTimeoutMs_RejectsWithError", () => {
+    const { settings, errors } = parseSettings({ reviewTimeoutMs: -1 });
+    expect(settings.reviewTimeoutMs).toBe(DEFAULT_SETTINGS.reviewTimeoutMs);
+    expect(errors.length).toBe(1);
+  });
+
+  it("parseSettings_NonNumericReviewTimeoutMs_RejectsWithError", () => {
+    const { settings, errors } = parseSettings({ reviewTimeoutMs: "5000" });
+    expect(settings.reviewTimeoutMs).toBe(DEFAULT_SETTINGS.reviewTimeoutMs);
+    expect(errors.length).toBe(1);
+  });
 });

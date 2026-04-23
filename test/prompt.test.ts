@@ -21,14 +21,12 @@ describe("buildReviewPrompt", () => {
     expect(result).toContain("No console.log in production code");
   });
 
-  it("buildReviewPrompt_DefaultPromptContainsVerifyBeforeFlagging", () => {
-    expect(DEFAULT_REVIEW_PROMPT).toContain("Verify before flagging");
+  it("buildReviewPrompt_DefaultPromptContainsToolBudget", () => {
+    expect(DEFAULT_REVIEW_PROMPT).toContain("5 tool calls");
   });
 
-  it("buildReviewPrompt_DefaultPromptContainsWorkflow", () => {
-    expect(DEFAULT_REVIEW_PROMPT).toContain("Explore");
-    expect(DEFAULT_REVIEW_PROMPT).toContain("Analyze");
-    expect(DEFAULT_REVIEW_PROMPT).toContain("Report");
+  it("buildReviewPrompt_DefaultPromptContainsCaughtBugsMantra", () => {
+    expect(DEFAULT_REVIEW_PROMPT).toContain("Caught bugs");
   });
 
   it("buildReviewPrompt_DefaultPromptContainsLGTM", () => {

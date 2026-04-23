@@ -15,6 +15,7 @@ export interface AutoReviewSettings {
   model: string; // "provider/model-id" e.g. "amazon-bedrock/us.anthropic.claude-opus-4-6-v1"
   thinkingLevel: string; // "off" | "minimal" | "low" | "medium" | "high" | "xhigh"
   roundupEnabled: boolean;
+  reviewTimeoutMs: number; // Max wall-clock for a single review (default 120s)
 }
 
 export const DEFAULT_SETTINGS: AutoReviewSettings = {
@@ -22,6 +23,7 @@ export const DEFAULT_SETTINGS: AutoReviewSettings = {
   model: "amazon-bedrock/us.anthropic.claude-opus-4-6-v1",
   thinkingLevel: "off",
   roundupEnabled: false,
+  reviewTimeoutMs: 120_000,
 };
 
 export const VALID_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
@@ -78,6 +80,20 @@ export function parseSettings(
     } else {
       errors.push(
         `[auto-review] "roundupEnabled" must be a boolean (got ${JSON.stringify(parsed.roundupEnabled)}). Using default: ${DEFAULT_SETTINGS.roundupEnabled}.`,
+      );
+    }
+  }
+
+  if ("reviewTimeoutMs" in parsed) {
+    if (
+      typeof parsed.reviewTimeoutMs === "number" &&
+      Number.isInteger(parsed.reviewTimeoutMs) &&
+      parsed.reviewTimeoutMs > 0
+    ) {
+      settings.reviewTimeoutMs = parsed.reviewTimeoutMs;
+    } else {
+      errors.push(
+        `[auto-review] "reviewTimeoutMs" must be a positive integer (got ${JSON.stringify(parsed.reviewTimeoutMs)}). Using default: ${DEFAULT_SETTINGS.reviewTimeoutMs}.`,
       );
     }
   }

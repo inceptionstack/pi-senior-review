@@ -65,12 +65,22 @@ export async function runReviewSession(prompt: string, opts: ReviewOptions): Pro
         if (success) {
           console.log(`[auto-review] Using reviewer model: ${opts.model}`);
         } else {
-          console.log(`[auto-review] ⚠️ Model ${opts.model} found but no API key. Using default.`);
-          opts.onActivity?.("⚠️ model key missing, using default");
+          const defaultModel = session.model;
+          const defaultName = defaultModel
+            ? `${defaultModel.provider}/${defaultModel.id}`
+            : "unknown";
+          console.log(
+            `[auto-review] Model ${opts.model} has no API key. Using default: ${defaultName}`,
+          );
+          opts.onActivity?.(`default model: ${defaultName}`);
         }
       } else {
-        console.log(`[auto-review] ⚠️ Model ${opts.model} not found. Using default.`);
-        opts.onActivity?.("⚠️ model not found, using default");
+        const defaultModel = session.model;
+        const defaultName = defaultModel
+          ? `${defaultModel.provider}/${defaultModel.id}`
+          : "unknown";
+        console.log(`[auto-review] Model ${opts.model} not found. Using default: ${defaultName}`);
+        opts.onActivity?.(`default model: ${defaultName}`);
       }
     }
   }
@@ -143,7 +153,37 @@ export async function runReviewSession(prompt: string, opts: ReviewOptions): Pro
     session.dispose();
   }
 
-  const isLgtm = !reviewText.trim() || reviewText.includes("LGTM");
+  // Strip tool-call noise from the review text.
+  // The reviewer may output "Let me check... <bash>...</bash>" before the actual review.
+  // Keep only the final review section.
+  let cleanedText = reviewText;
+
+  // Try to find where the actual review findings start
+  const reviewMarkers = [
+    /\n##\s*Review/i,
+    /\n##\s*Issues/i,
+    /\n##\s*Findings/i,
+    /\nHere'?s my review/i,
+    /\nHere are the issues/i,
+    /\n-\s*\*\*(High|Medium|Low)/i,
+    /\n-\s*\[(High|Medium|Low)/i,
+    /\n\*\*Issues found/i,
+    /LGTM/,
+  ];
+  for (const marker of reviewMarkers) {
+    const match = cleanedText.match(marker);
+    if (match?.index !== undefined && match.index > 0) {
+      cleanedText = cleanedText.slice(match.index).trim();
+      break;
+    }
+  }
+
+  // Also strip any remaining XML-style tags
+  cleanedText = cleanedText.replace(/<(bash|read_file|grep|find|ls)[^>]*>[\s\S]*?<\/\1>/g, "");
+  cleanedText = cleanedText.replace(/<(bash|read_file|grep|find|ls)[^>]*\/>/g, "");
+  cleanedText = cleanedText.trim();
+
+  const isLgtm = !cleanedText.trim() || cleanedText.includes("LGTM");
   const durationMs = Date.now() - startTime;
   console.log(
     `[auto-review] Review completed in ${(durationMs / 1000).toFixed(1)}s | ` +
@@ -151,7 +191,7 @@ export async function runReviewSession(prompt: string, opts: ReviewOptions): Pro
       `response: ${reviewText.length} chars | ` +
       `lgtm: ${isLgtm}`,
   );
-  return { text: reviewText, isLgtm, durationMs };
+  return { text: cleanedText, isLgtm, durationMs };
 }
 
 /**

@@ -6,6 +6,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { truncateDiff } from "./helpers";
+import { filterIgnored } from "./ignore";
 
 export interface ReviewContext {
   diff: string;
@@ -24,19 +25,44 @@ const MAX_TOTAL_CONTENT_SIZE = 60_000;
 export async function buildReviewContext(
   pi: ExtensionAPI,
   onStatus?: (msg: string) => void,
+  ignorePatterns?: string[],
 ): Promise<ReviewContext | null> {
   onStatus?.("getting diff…");
 
-  const diffResult = await pi.exec("git", ["diff", "HEAD"], { timeout: 15000 });
-  const diff = diffResult.code === 0 ? diffResult.stdout.trim() : "";
+  // If we have ignore patterns, get filtered diff; otherwise get full diff
+  const diffArgs = ["diff", "HEAD"];
+  // We'll refine the diff after we know which files to include
+  const fullDiffResult = await pi.exec("git", diffArgs, { timeout: 15000 });
+  let diff = fullDiffResult.code === 0 ? fullDiffResult.stdout.trim() : "";
 
   if (!diff) return null;
 
   // Get list of changed files
   onStatus?.("listing changed files…");
   const changedResult = await pi.exec("git", ["diff", "HEAD", "--name-only"], { timeout: 5000 });
-  const changedFiles =
+  let changedFiles =
     changedResult.code === 0 ? changedResult.stdout.trim().split("\n").filter(Boolean) : [];
+
+  // Apply ignore patterns
+  if (ignorePatterns && ignorePatterns.length > 0) {
+    const before = changedFiles.length;
+    changedFiles = filterIgnored(changedFiles, ignorePatterns);
+    if (changedFiles.length < before) {
+      onStatus?.(`filtered ${before - changedFiles.length} ignored files`);
+    }
+  }
+
+  if (changedFiles.length === 0) return null;
+
+  // Re-get diff for only non-ignored files if we filtered any out
+  if (ignorePatterns && ignorePatterns.length > 0) {
+    const filteredDiffResult = await pi.exec("git", ["diff", "HEAD", "--", ...changedFiles], {
+      timeout: 15000,
+    });
+    if (filteredDiffResult.code === 0 && filteredDiffResult.stdout.trim()) {
+      diff = filteredDiffResult.stdout.trim();
+    }
+  }
 
   // Read full contents of each changed file, respecting total size cap
   const fileContents = new Map<string, string>();

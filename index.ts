@@ -34,6 +34,7 @@ import {
   buildChangeSummary,
 } from "./changes";
 import { buildReviewContext, formatReviewContext } from "./context";
+import { loadIgnorePatterns } from "./ignore";
 
 // ── Default review prompt ────────────────────────────
 
@@ -159,6 +160,7 @@ export default function (pi: ExtensionAPI) {
 
   let settings: AutoReviewSettings = { ...DEFAULT_SETTINGS };
   let customRules: string | null = null;
+  let ignorePatterns: string[] | null = null;
 
   let agentToolCalls: TrackedToolCall[] = [];
   const modifiedFiles = new Set<string>();
@@ -276,7 +278,11 @@ export default function (pi: ExtensionAPI) {
 
     try {
       // Build rich context: file tree, changed files, full contents, diff
-      const reviewContext = await buildReviewContext(pi, (msg) => updateStatus(ctx, msg));
+      const reviewContext = await buildReviewContext(
+        pi,
+        (msg) => updateStatus(ctx, msg),
+        ignorePatterns ?? undefined,
+      );
 
       let contextSection: string;
       if (reviewContext) {
@@ -428,16 +434,22 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     reviewLoopCount = 0;
 
-    const [rules, settingsResult] = await Promise.all([
+    const [rules, settingsResult, patterns] = await Promise.all([
       loadReviewRules(ctx.cwd),
       loadSettings(ctx.cwd),
+      loadIgnorePatterns(ctx.cwd),
     ]);
 
     customRules = rules;
+    ignorePatterns = patterns;
     settings = settingsResult.settings;
 
     if (customRules)
       console.log("[auto-review] Loaded custom rules from .autoreview/review-rules.md");
+    if (ignorePatterns)
+      console.log(
+        `[auto-review] Loaded ${ignorePatterns.length} ignore pattern(s) from .autoreview/ignore`,
+      );
     for (const err of settingsResult.errors) {
       console.log(err);
       if (ctx.hasUI) ctx.ui.notify(err, "warning");

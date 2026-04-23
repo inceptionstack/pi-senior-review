@@ -419,9 +419,17 @@ export default function (pi: ExtensionAPI) {
 
   // ── Auto-review on agent_end ───────────────────────
 
-  pi.on("agent_end", async (_event, ctx) => {
+  pi.on("agent_end", async (event, ctx) => {
     // Don't interfere if a toggle-review is in progress (confirm dialog open)
     if (isToggling) return;
+
+    // Don't auto-review if the agent was aborted (Esc pressed)
+    const messages = (event as any).messages ?? [];
+    const lastAssistant = [...messages].reverse().find((m: any) => m.role === "assistant");
+    if (lastAssistant?.stopReason === "aborted") {
+      updateStatus(ctx);
+      return;
+    }
 
     if (!reviewEnabled) {
       // Keep tracking state (modifiedFiles, agentToolCalls) so we can
@@ -555,8 +563,32 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerShortcut("ctrl+alt+r", {
     description: "Cancel in-progress code review",
-    handler: async (_ctx) => {
-      if (isReviewing && reviewAbort) reviewAbort.abort();
+    handler: async (ctx) => {
+      if (isReviewing && reviewAbort) {
+        console.log("[auto-review] Cancel requested via Ctrl+Alt+R");
+        reviewAbort.abort();
+        if (ctx.hasUI) ctx.ui.notify("Auto-review cancelled", "info");
+      }
+    },
+  });
+
+  pi.registerShortcut("ctrl+alt+meta+r", {
+    description: "Full reset: cancel review, reset loop count, clear tracked files",
+    handler: async (ctx) => {
+      console.log("[auto-review] Full reset via Ctrl+Alt+Cmd+R");
+      if (isReviewing && reviewAbort) {
+        reviewAbort.abort();
+      }
+      isReviewing = false;
+      reviewAbort = null;
+      reviewLoopCount = 0;
+      peakReviewLoopCount = 0;
+      roundupDone = false;
+      lastReviewHadIssues = false;
+      sessionChangeSummaries = [];
+      clearActivityTimer();
+      resetTrackingState(ctx);
+      if (ctx.hasUI) ctx.ui.notify("Auto-review fully reset", "info");
     },
   });
 

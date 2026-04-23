@@ -6,7 +6,7 @@
  * as a steering message so it can decide whether to fix anything.
  *
  * UX:
- *   - Status bar shows ★ review on/off + pending file count
+ *   - Status bar shows auto-review on/off + pending file count
  *   - Shift+R toggles review on/off
  *   - Esc cancels an in-progress review
  *   - /review command also toggles
@@ -54,13 +54,13 @@ export default function (pi: ExtensionAPI) {
   function updateStatus(ctx: { ui: any; hasUI?: boolean }) {
     if (!ctx.hasUI || !ctx.ui) return;
     const theme = ctx.ui.theme;
-    const star = reviewEnabled ? theme.fg("accent", "★") : theme.fg("dim", "☆");
+    const label = theme.fg("accent", "auto-review");
     const state = reviewEnabled ? theme.fg("success", "on") : theme.fg("dim", "off");
 
     if (isReviewing) {
       ctx.ui.setStatus(
         "code-review",
-        `${star} ${theme.fg("accent", "review")} ${theme.fg("warning", "reviewing…")} ${theme.fg("dim", "(Ctrl+Shift+R to cancel)")}`,
+        `${label} ${theme.fg("warning", "reviewing…")} ${theme.fg("dim", "(Ctrl+Shift+R to cancel)")}`,
       );
       return;
     }
@@ -69,14 +69,14 @@ export default function (pi: ExtensionAPI) {
       const count = modifiedFiles.size;
       ctx.ui.setStatus(
         "code-review",
-        `${star} ${theme.fg("accent", "review")} ${state} ${theme.fg("muted", `· will review`)} ${theme.fg("accent", String(count))} ${theme.fg("muted", count === 1 ? "file" : "files")} ${theme.fg("dim", "(Shift+R toggle)")}`,
+        `${label} ${state} ${theme.fg("muted", `· will review`)} ${theme.fg("accent", String(count))} ${theme.fg("muted", count === 1 ? "file" : "files")} ${theme.fg("dim", "(Shift+R toggle)")}`,
       );
       return;
     }
 
     ctx.ui.setStatus(
       "code-review",
-      `${star} ${theme.fg("accent", "review")} ${state} ${theme.fg("dim", "(Shift+R toggle)")}`,
+      `${label} ${state} ${theme.fg("dim", "(Shift+R toggle)")}`,
     );
   }
 
@@ -298,7 +298,7 @@ export default function (pi: ExtensionAPI) {
     description: "Toggle automatic code review",
     handler: async (ctx) => {
       reviewEnabled = !reviewEnabled;
-      ctx.ui.notify(`Code review: ${reviewEnabled ? "enabled ★" : "disabled ☆"}`, "info");
+      ctx.ui.notify(`Auto-review: ${reviewEnabled ? "on" : "off"}`, "info");
       updateStatus(ctx);
     },
   });
@@ -309,7 +309,7 @@ export default function (pi: ExtensionAPI) {
     description: "Toggle automatic code review",
     handler: async (_args, ctx) => {
       reviewEnabled = !reviewEnabled;
-      ctx.ui.notify(`Code review: ${reviewEnabled ? "enabled ★" : "disabled ☆"}`, "info");
+      ctx.ui.notify(`Auto-review: ${reviewEnabled ? "on" : "off"}`, "info");
       updateStatus(ctx);
     },
   });

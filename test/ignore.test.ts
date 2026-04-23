@@ -35,8 +35,15 @@ describe("shouldIgnore", () => {
     expect(shouldIgnore("src/dist.ts", ["dist/**"])).toBe(false);
   });
 
-  it("shouldIgnore_PathPattern_MatchesFromRoot", () => {
+  it("shouldIgnore_TrailingSlash_TreatedAsDirectory", () => {
+    expect(shouldIgnore("dist/bundle.js", ["dist/"])).toBe(true);
+    expect(shouldIgnore("dist/sub/file.js", ["dist/"])).toBe(true);
+    expect(shouldIgnore("src/dist.ts", ["dist/"])).toBe(false);
+  });
+
+  it("shouldIgnore_PathPatternWithStar_DoesNotMatchNested", () => {
     expect(shouldIgnore("src/generated/types.ts", ["src/generated/*"])).toBe(true);
+    expect(shouldIgnore("src/generated/deep/nested.ts", ["src/generated/*"])).toBe(false);
     expect(shouldIgnore("lib/generated/types.ts", ["src/generated/*"])).toBe(false);
   });
 

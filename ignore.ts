@@ -9,6 +9,7 @@
  *   - Patterns without / match the filename only
  *   - Patterns with / match the full path
  *   - Leading ! negates a pattern
+ *   - Trailing / means directory (treated as dir/**)
  */
 
 import { readFile } from "node:fs/promises";
@@ -22,7 +23,9 @@ export async function loadIgnorePatterns(cwd: string): Promise<string[] | null> 
   try {
     const content = await readFile(join(cwd, ".autoreview", "ignore"), "utf8");
     return parseIgnoreFile(content);
-  } catch {
+  } catch (err: any) {
+    if (err?.code === "ENOENT") return null;
+    console.log(`[auto-review] Warning: could not read .autoreview/ignore: ${err?.message}`);
     return null;
   }
 }
@@ -39,34 +42,28 @@ export function parseIgnoreFile(content: string): string[] {
 
 /**
  * Convert a gitignore-style pattern to a RegExp.
+ * The pattern should NOT have a ! prefix (negation is handled by the caller).
  */
 function patternToRegex(pattern: string): RegExp {
-  const isNegated = pattern.startsWith("!");
-  const raw = isNegated ? pattern.slice(1) : pattern;
+  // Handle trailing / as directory pattern → dir/**
+  let p = pattern;
+  if (p.endsWith("/")) {
+    p = p.slice(0, -1) + "/**";
+  }
 
-  // If pattern has no /, match against filename only
-  // If pattern has /, match against full path
-  const matchFullPath = raw.includes("/");
+  const matchFullPath = p.includes("/");
 
-  let regex = raw
-    // Escape regex special chars (except * and ?)
+  let regex = p
     .replace(/([.+^${}()|[\]\\])/g, "\\$1")
-    // ** matches everything
     .replace(/\*\*/g, "DOUBLESTAR")
-    // * matches anything except /
     .replace(/\*/g, "[^/]*")
-    // ? matches single char
     .replace(/\?/g, "[^/]")
-    // Restore **
     .replace(/DOUBLESTAR/g, ".*");
 
-  // Anchor
   if (matchFullPath) {
-    // Strip leading / for matching
     if (regex.startsWith("/")) regex = regex.slice(1);
-    regex = `^${regex}`;
+    regex = `^${regex}$`;
   } else {
-    // Match anywhere in filename
     regex = `(^|/)${regex}$`;
   }
 
@@ -79,7 +76,6 @@ function patternToRegex(pattern: string): RegExp {
  */
 export function shouldIgnore(filePath: string, patterns: string[]): boolean {
   const name = basename(filePath);
-  // Normalize: strip leading ./
   const normalized = filePath.startsWith("./") ? filePath.slice(2) : filePath;
 
   let ignored = false;
@@ -89,7 +85,6 @@ export function shouldIgnore(filePath: string, patterns: string[]): boolean {
     const raw = isNegated ? pattern.slice(1) : pattern;
     const regex = patternToRegex(raw);
 
-    // Test against full path and filename
     const matchesPath = regex.test(normalized);
     const matchesName = !raw.includes("/") && regex.test(name);
 

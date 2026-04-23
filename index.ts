@@ -178,6 +178,7 @@ export default function (pi: ExtensionAPI) {
   let reviewAbort: AbortController | null = null;
   let isReviewing = false;
   let lastReviewHadIssues = false;
+  let lastReviewedContentHash = "";
   let reviewLoopCount = 0;
   let peakReviewLoopCount = 0; // highest loop count before LGTM (tracks if fixes happened)
   let roundupDone = false;
@@ -288,6 +289,7 @@ export default function (pi: ExtensionAPI) {
       if (reviewEnabled) {
         reviewLoopCount = 0;
         peakReviewLoopCount = 0;
+        lastReviewedContentHash = "";
         roundupDone = false;
         sessionChangeSummaries = [];
         if (ctx.hasUI) ctx.ui.notify(`Auto-review: on`, "info");
@@ -475,7 +477,16 @@ export default function (pi: ExtensionAPI) {
         allRoots,
       );
 
-      if (!best) {
+      if (!best || best.content.trim().length < 50) {
+        // No meaningful changes to review, or content too small
+        resetTrackingState(ctx);
+        return;
+      }
+
+      // Skip if we've already reviewed this exact content
+      const contentHash = best.content.length.toString() + ":" + best.content.slice(0, 100);
+      if (contentHash === lastReviewedContentHash) {
+        console.log("[auto-review] Skipping — same content as last review");
         resetTrackingState(ctx);
         return;
       }
@@ -484,6 +495,7 @@ export default function (pi: ExtensionAPI) {
       console.log(
         `[auto-review] Reviewing ${best.files.length} files via ${best.label || "git diff"}: ${best.files.join(", ")}`,
       );
+      lastReviewedContentHash = contentHash;
       const prompt = `${buildReviewPrompt()}\n\n---\n\n${best.content}`;
       const result = await runReviewSession(prompt, {
         signal: reviewAbort.signal,
@@ -583,6 +595,7 @@ export default function (pi: ExtensionAPI) {
       reviewAbort = null;
       reviewLoopCount = 0;
       peakReviewLoopCount = 0;
+      lastReviewedContentHash = "";
       roundupDone = false;
       lastReviewHadIssues = false;
       sessionChangeSummaries = [];
@@ -699,6 +712,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     reviewLoopCount = 0;
     peakReviewLoopCount = 0;
+    lastReviewedContentHash = "";
     roundupDone = false;
     sessionChangeSummaries = [];
 

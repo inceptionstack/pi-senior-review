@@ -108,8 +108,9 @@ If files are missing, defaults are used silently. If files are malformed, a clea
 
 | Key              | Action                                          |
 | ---------------- | ----------------------------------------------- |
-| **Alt+R**      | Toggle auto-review on/off (resets loop counter) |
-| **Ctrl+Alt+R** | Cancel in-progress review                       |
+| **Alt+R**          | Toggle auto-review on/off (resets loop counter) |
+| **Ctrl+Alt+R**      | Cancel in-progress review                       |
+| **Ctrl+Alt+Cmd+R**  | Full reset: cancel, reset loops, clear all state |
 
 ### Command
 

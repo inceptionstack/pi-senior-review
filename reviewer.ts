@@ -38,6 +38,48 @@ export interface ReviewOptions {
   onActivity?: (description: string) => void;
 }
 
+/** Review text markers that indicate where the actual review findings start. */
+const REVIEW_MARKERS = [
+  /\n##\s*Review/i,
+  /\n##\s*Issues/i,
+  /\n##\s*Findings/i,
+  /\nHere'?s my review/i,
+  /\nHere are the issues/i,
+  /\n-\s*\*\*(High|Medium|Low)/i,
+  /\n-\s*\[(High|Medium|Low)/i,
+  /\n\*\*Issues found/i,
+  /LGTM/,
+];
+
+/**
+ * Strip tool-call noise from raw review text.
+ * Finds the start of actual review content and removes XML tags.
+ */
+export function cleanReviewText(raw: string): string {
+  let text = raw;
+
+  // Find where the actual review findings start
+  for (const marker of REVIEW_MARKERS) {
+    const match = text.match(marker);
+    if (match?.index !== undefined && match.index > 0) {
+      text = text.slice(match.index).trim();
+      break;
+    }
+  }
+
+  // Strip XML-style tool tags
+  text = text.replace(/<(bash|read_file|grep|find|ls)[^>]*>[\s\S]*?<\/\1>/g, "");
+  text = text.replace(/<(bash|read_file|grep|find|ls)[^>]*\/>/g, "");
+  return text.trim();
+}
+
+/**
+ * Check if cleaned review text indicates LGTM (no issues).
+ */
+export function isLgtmResult(cleanedText: string): boolean {
+  return !cleanedText.trim() || cleanedText.includes("LGTM");
+}
+
 /**
  * Spawn a fresh pi reviewer instance with tools, send a prompt,
  * collect the response. The reviewer can read files and explore
@@ -183,37 +225,8 @@ export async function runReviewSession(prompt: string, opts: ReviewOptions): Pro
     session.dispose();
   }
 
-  // Strip tool-call noise from the review text.
-  // The reviewer may output "Let me check... <bash>...</bash>" before the actual review.
-  // Keep only the final review section.
-  let cleanedText = reviewText;
-
-  // Try to find where the actual review findings start
-  const reviewMarkers = [
-    /\n##\s*Review/i,
-    /\n##\s*Issues/i,
-    /\n##\s*Findings/i,
-    /\nHere'?s my review/i,
-    /\nHere are the issues/i,
-    /\n-\s*\*\*(High|Medium|Low)/i,
-    /\n-\s*\[(High|Medium|Low)/i,
-    /\n\*\*Issues found/i,
-    /LGTM/,
-  ];
-  for (const marker of reviewMarkers) {
-    const match = cleanedText.match(marker);
-    if (match?.index !== undefined && match.index > 0) {
-      cleanedText = cleanedText.slice(match.index).trim();
-      break;
-    }
-  }
-
-  // Also strip any remaining XML-style tags
-  cleanedText = cleanedText.replace(/<(bash|read_file|grep|find|ls)[^>]*>[\s\S]*?<\/\1>/g, "");
-  cleanedText = cleanedText.replace(/<(bash|read_file|grep|find|ls)[^>]*\/>/g, "");
-  cleanedText = cleanedText.trim();
-
-  const isLgtm = !cleanedText.trim() || cleanedText.includes("LGTM");
+  const cleanedText = cleanReviewText(reviewText);
+  const isLgtm = isLgtmResult(cleanedText);
   const durationMs = Date.now() - startTime;
   console.log(
     `[auto-review] Review completed in ${(durationMs / 1000).toFixed(1)}s | ` +

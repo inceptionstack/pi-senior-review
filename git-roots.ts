@@ -70,3 +70,23 @@ export async function resolveGitRoots(
 
   return roots;
 }
+
+/**
+ * Resolve all git roots from multiple sources:
+ * tracked modified files, tool call paths, and detected bash git roots.
+ */
+export async function resolveAllGitRoots(
+  pi: ExtensionAPI,
+  cwd: string,
+  modifiedFiles: Set<string>,
+  toolCallPaths: string[],
+  detectedGitRoots: Set<string>,
+): Promise<Set<string>> {
+  const allRoots = new Set(detectedGitRoots);
+  const combinedFiles = new Set([...modifiedFiles, ...toolCallPaths]);
+  const fileRoots = await resolveGitRoots(pi, cwd, combinedFiles);
+  for (const root of fileRoots.keys()) {
+    if (root !== "(no-git)") allRoots.add(root);
+  }
+  return allRoots;
+}

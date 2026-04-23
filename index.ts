@@ -20,197 +20,25 @@
  *   or: cp index.ts ~/.pi/agent/extensions/pi-autoreview.ts
  */
 
-import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { join } from "node:path";
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
+import { type AutoReviewSettings, DEFAULT_SETTINGS, loadSettings, loadReviewRules } from "./settings";
+import { buildReviewPrompt } from "./prompt";
 import { clampCommitCount, shouldDiffAllCommits, truncateDiff } from "./helpers";
 import { runReviewSession, sendReviewResult } from "./reviewer";
 import { type TrackedToolCall, hasFileChanges, isFileModifyingTool, collectModifiedPaths } from "./changes";
 import { getBestReviewContent } from "./context";
 import { loadIgnorePatterns, filterIgnored } from "./ignore";
 import { loadRoundupRules, runRoundupReview } from "./roundup";
-import { findGitRoot, resolveGitRoots } from "./git-roots";
+import { findGitRoot, resolveAllGitRoots } from "./git-roots";
 import { log, logRotate } from "./logger";
 
 const MAX_TRACKED_FILES = 1000;
 
 /** Minimum content length to trigger a review (avoids reviewing trivial/empty diffs) */
 const MIN_REVIEW_CONTENT_LENGTH = 50;
-
-// ── Default review prompt ────────────────────────────
-
-const DEFAULT_REVIEW_PROMPT = `You are a senior code reviewer. You will be given:
-- A list of changed files
-- Full contents of each changed file (post-change)
-- The git diff of the changes
-- Optionally, the project file tree
-
-You have tools to explore the codebase:
-- read(path, offset?, limit?) — read a file's contents
-- bash(command) — run shell commands (git log, cat, find, grep, etc.)
-- grep(pattern, path) — search for a pattern
-- find(path, pattern) — find files
-- ls(path) — list directory contents
-
-You do NOT have write or edit tools. You are reviewing only, not modifying code.
-Do NOT output XML tags like <read_file> or <bash> — use the tools above via function calls.
-
-## IMPORTANT: Verify before flagging
-
-You MUST use your tools to verify any concern before reporting it as an issue.
-- If you think a function is missing error handling → read the file and confirm.
-- If you think tests are missing → ls/find the test directory and check.
-- If you think a pattern is used inconsistently → read the other call sites.
-- If you suspect an injection risk → read the actual code to see how args are passed.
-- NEVER report issues based on assumptions about code you haven't read.
-- NEVER invent or hallucinate code that might exist — read it first.
-
-## Workflow
-
-1. **Explore**: Read all changed files fully. Check the test directory. Understand the codebase.
-2. **Analyze**: Compare the diff against the full file contents. Understand the intent.
-3. **Report**: Only then write your review.
-
-## What to review
-
-### Correctness (most important)
-- Bugs, logic errors, off-by-one errors
-- Missing error handling that would cause runtime crashes
-- Race conditions or concurrency issues
-
-### Security
-- Injection vulnerabilities, secret leaks, auth bypasses
-- Unsafe input handling
-
-### Design (only flag clear violations)
-- Duplicated logic that will cause bugs if one copy is updated but not the other
-- Only flag design issues that create concrete risk, not stylistic preferences
-
-## What NOT to review
-- Do NOT flag missing tests unless the change is complex algorithmic logic
-- Do NOT flag style issues (naming, file length, pattern preferences)
-- Do NOT suggest refactors that aren't related to the current change
-- Do NOT report issues you cannot verify with your tools
-
-## Response format
-Be concise. If everything looks fine, say "LGTM — no issues found."
-If there are issues, list them as bullet points with severity (high/medium/low).
-Only report issues you are confident about after verification.`;
-
-// ── Config types ─────────────────────────────────────
-
-interface AutoReviewSettings {
-  maxReviewLoops: number;
-  model: string; // "provider/model-id" e.g. "amazon-bedrock/us.anthropic.claude-opus-4-6-v1"
-  thinkingLevel: string; // "off" | "minimal" | "low" | "medium" | "high" | "xhigh"
-  roundupEnabled: boolean;
-}
-
-const DEFAULT_SETTINGS: AutoReviewSettings = {
-  maxReviewLoops: 100,
-  model: "amazon-bedrock/us.anthropic.claude-opus-4-6-v1",
-  thinkingLevel: "off",
-  roundupEnabled: false,
-};
-
-// ── Config loading ───────────────────────────────────
-
-async function loadReviewRules(cwd: string): Promise<string | null> {
-  try {
-    const content = await readFile(join(cwd, ".autoreview", "review-rules.md"), "utf8");
-    return content.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-async function loadSettings(
-  cwd: string,
-): Promise<{ settings: AutoReviewSettings; errors: string[] }> {
-  const errors: string[] = [];
-
-  try {
-    const raw = await readFile(join(cwd, ".autoreview", "settings.json"), "utf8");
-
-    let parsed: any;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (e: any) {
-      errors.push(
-        `[auto-review] .autoreview/settings.json is not valid JSON: ${e.message}. Using defaults.`,
-      );
-      return { settings: { ...DEFAULT_SETTINGS }, errors };
-    }
-
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      errors.push(`[auto-review] .autoreview/settings.json must be a JSON object. Using defaults.`);
-      return { settings: { ...DEFAULT_SETTINGS }, errors };
-    }
-
-    const settings = { ...DEFAULT_SETTINGS };
-
-    if ("maxReviewLoops" in parsed) {
-      if (
-        typeof parsed.maxReviewLoops === "number" &&
-        Number.isInteger(parsed.maxReviewLoops) &&
-        parsed.maxReviewLoops > 0
-      ) {
-        settings.maxReviewLoops = parsed.maxReviewLoops;
-      } else {
-        errors.push(
-          `[auto-review] "maxReviewLoops" must be a positive integer (got ${JSON.stringify(parsed.maxReviewLoops)}). Using default: ${DEFAULT_SETTINGS.maxReviewLoops}.`,
-        );
-      }
-    }
-
-    if ("model" in parsed) {
-      if (typeof parsed.model === "string" && parsed.model.includes("/")) {
-        settings.model = parsed.model;
-      } else {
-        errors.push(
-          `[auto-review] "model" must be "provider/model-id" (got ${JSON.stringify(parsed.model)}). Using default: ${DEFAULT_SETTINGS.model}.`,
-        );
-      }
-    }
-
-    if ("thinkingLevel" in parsed) {
-      const valid = ["off", "minimal", "low", "medium", "high", "xhigh"];
-      if (typeof parsed.thinkingLevel === "string" && valid.includes(parsed.thinkingLevel)) {
-        settings.thinkingLevel = parsed.thinkingLevel;
-      } else {
-        errors.push(
-          `[auto-review] "thinkingLevel" must be one of ${valid.join(", ")} (got ${JSON.stringify(parsed.thinkingLevel)}). Using default: ${DEFAULT_SETTINGS.thinkingLevel}.`,
-        );
-      }
-    }
-
-    if ("roundupEnabled" in parsed) {
-      if (typeof parsed.roundupEnabled === "boolean") {
-        settings.roundupEnabled = parsed.roundupEnabled;
-      } else {
-        errors.push(
-          `[auto-review] "roundupEnabled" must be a boolean (got ${JSON.stringify(parsed.roundupEnabled)}). Using default: ${DEFAULT_SETTINGS.roundupEnabled}.`,
-        );
-      }
-    }
-
-    const knownKeys = new Set(Object.keys(DEFAULT_SETTINGS));
-    for (const key of Object.keys(parsed)) {
-      if (!knownKeys.has(key)) {
-        errors.push(
-          `[auto-review] Unknown setting "${key}" (ignored). Known: ${[...knownKeys].join(", ")}.`,
-        );
-      }
-    }
-
-    return { settings, errors };
-  } catch {
-    return { settings: { ...DEFAULT_SETTINGS }, errors };
-  }
-}
 
 // ── Extension ────────────────────────────────────────
 
@@ -237,14 +65,6 @@ export default function (pi: ExtensionAPI) {
 
   // ── Helpers ────────────────────────────────────────
 
-  function buildReviewPrompt(): string {
-    let prompt = DEFAULT_REVIEW_PROMPT;
-    if (customRules) {
-      prompt += `\n\n## Additional project-specific rules\n\n${customRules}`;
-    }
-    return prompt;
-  }
-
   function resetTrackingState(ctx: { ui: any; hasUI?: boolean }) {
     agentToolCalls = [];
     modifiedFiles.clear();
@@ -263,6 +83,21 @@ export default function (pi: ExtensionAPI) {
       activityTimer = undefined;
     }
     lastActivity = "";
+  }
+
+  /**
+   * Clean up after a review completes (success, error, or cancel).
+   * Pass resetTracking=false for /review N which doesn't track files.
+   */
+  function finishReview(ctx: { ui: any; hasUI?: boolean }, resetTracking = true) {
+    isReviewing = false;
+    reviewAbort = null;
+    clearActivityTimer();
+    if (resetTracking) {
+      resetTrackingState(ctx);
+    } else {
+      updateStatus(ctx);
+    }
   }
 
   function updateStatus(ctx: { ui: any; hasUI?: boolean }, activity?: string) {
@@ -357,13 +192,9 @@ export default function (pi: ExtensionAPI) {
             updateStatus(ctx);
             try {
               // Resolve git roots from tracked files, tool call paths, and detected bash git commands
-              const allRoots = new Set(detectedGitRoots);
-              const toolCallPaths = new Set(collectModifiedPaths(agentToolCalls));
-              const combinedFiles = new Set([...modifiedFiles, ...toolCallPaths]);
-              const fileRoots = await resolveGitRoots(pi, ctx.cwd, combinedFiles);
-              for (const root of fileRoots.keys()) {
-                if (root !== "(no-git)") allRoots.add(root);
-              }
+              const allRoots = await resolveAllGitRoots(
+                pi, ctx.cwd, modifiedFiles, collectModifiedPaths(agentToolCalls), detectedGitRoots,
+              );
 
               logRotate("=== review start ===");
               log("cwd:", ctx.cwd);
@@ -384,7 +215,7 @@ export default function (pi: ExtensionAPI) {
 
               if (best) {
                 updateStatus(ctx, "analyzing…");
-                const prompt = `${buildReviewPrompt()}\n\n---\n\n${best.content}`;
+                const prompt = `${buildReviewPrompt(customRules)}\n\n---\n\n${best.content}`;
                 log("prompt length:", prompt.length);
                 const result = await runReviewSession(prompt, {
                   signal: reviewAbort.signal,
@@ -409,9 +240,7 @@ export default function (pi: ExtensionAPI) {
                 ctx.ui.notify(`Auto-review error: ${errMsg.slice(0, 200)}`, "error");
               }
             } finally {
-              isReviewing = false;
-              reviewAbort = null;
-              resetTrackingState(ctx);
+              finishReview(ctx);
             }
             return;
           } else {
@@ -538,13 +367,9 @@ export default function (pi: ExtensionAPI) {
 
     try {
       // Resolve git roots from tracked files, tool call paths, and detected bash git commands
-      const allRoots = new Set(detectedGitRoots);
-      const toolCallPaths = new Set(collectModifiedPaths(agentToolCalls));
-      const combinedFiles = new Set([...modifiedFiles, ...toolCallPaths]);
-      const fileRoots = await resolveGitRoots(pi, ctx.cwd, combinedFiles);
-      for (const root of fileRoots.keys()) {
-        if (root !== "(no-git)") allRoots.add(root);
-      }
+      const allRoots = await resolveAllGitRoots(
+        pi, ctx.cwd, modifiedFiles, collectModifiedPaths(agentToolCalls), detectedGitRoots,
+      );
 
       logRotate("=== review start (auto) ===");
       log("cwd:", ctx.cwd);
@@ -581,7 +406,7 @@ export default function (pi: ExtensionAPI) {
       console.log(
         `[auto-review] Reviewing ${best.files.length} files via ${best.label || "git diff"}: ${best.files.join(", ")}`,
       );
-      const prompt = `${buildReviewPrompt()}\n\n---\n\n${best.content}`;
+      const prompt = `${buildReviewPrompt(customRules)}\n\n---\n\n${best.content}`;
       const result = await runReviewSession(prompt, {
         signal: reviewAbort.signal,
         cwd: ctx.cwd,
@@ -653,10 +478,7 @@ export default function (pi: ExtensionAPI) {
         );
       }
     } finally {
-      isReviewing = false;
-      reviewAbort = null;
-      clearActivityTimer();
-      resetTrackingState(ctx);
+      finishReview(ctx);
     }
   });
 
@@ -790,7 +612,7 @@ export default function (pi: ExtensionAPI) {
         const truncatedDiff = truncateDiff(diff, 30000);
         const commitLabel = `last ${effectiveCount} commit${effectiveCount > 1 ? "s" : ""}`;
 
-        const prompt = `${buildReviewPrompt()}\n\n---\n\nReview the following git diff (${commitLabel}):\n\nCommits:\n${commitLog}\n\nDiff:\n\`\`\`diff\n${truncatedDiff}\n\`\`\``;
+        const prompt = `${buildReviewPrompt(customRules)}\n\n---\n\nReview the following git diff (${commitLabel}):\n\nCommits:\n${commitLog}\n\nDiff:\n\`\`\`diff\n${truncatedDiff}\n\`\`\``;
         const result = await runReviewSession(prompt, {
           signal: reviewAbort!.signal,
           cwd: ctx.cwd,
@@ -807,14 +629,7 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify(`Review failed: ${err?.message ?? err}`, "error");
         }
       } finally {
-        isReviewing = false;
-        reviewAbort = null;
-        if (activityTimer) {
-          clearTimeout(activityTimer);
-          activityTimer = undefined;
-        }
-        lastActivity = "";
-        updateStatus(ctx);
+        finishReview(ctx, false);
       }
     },
   });

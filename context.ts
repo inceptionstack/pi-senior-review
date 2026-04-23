@@ -28,6 +28,67 @@ export interface ReviewContext {
 const MAX_FILE_SIZE = 10_000;
 const MAX_TOTAL_CONTENT_SIZE = 60_000;
 
+export interface ReadFilesResult {
+  sections: string[];
+  contents: Map<string, string>;
+  totalSize: number;
+}
+
+/**
+ * Read changed files and return formatted sections + raw contents.
+ * Shared by all review paths to avoid duplication.
+ */
+export async function readChangedFiles(
+  pi: ExtensionAPI,
+  files: string[],
+  opts?: {
+    root?: string;
+    newFiles?: Set<string>;
+    onStatus?: (msg: string) => void;
+  },
+): Promise<ReadFilesResult> {
+  const sections: string[] = [];
+  const contents = new Map<string, string>();
+  let totalSize = 0;
+  const root = opts?.root;
+
+  for (const file of files) {
+    if (totalSize >= MAX_TOTAL_CONTENT_SIZE) {
+      sections.push(`### ${file}\n(skipped — total content size limit reached)`);
+      contents.set(file, "(skipped — total content size limit reached)");
+      continue;
+    }
+
+    const fullPath = root ? `${root}/${file}` : file;
+    opts?.onStatus?.(`reading ${fullPath}…`);
+
+    const readResult = await pi.exec(
+      "head", ["-c", String(MAX_FILE_SIZE + 100), fullPath],
+      { timeout: 5000 },
+    );
+
+    if (readResult.code !== 0 || !readResult.stdout) {
+      sections.push(`### ${file}\n(could not read — file may be deleted)`);
+      contents.set(file, "(could not read — file may be deleted)");
+      continue;
+    }
+
+    let content = readResult.stdout;
+    totalSize += content.length;
+
+    if (content.length > MAX_FILE_SIZE) {
+      content = content.slice(0, MAX_FILE_SIZE) +
+        `\n\n... (truncated, ${content.length} total chars)`;
+    }
+
+    const newLabel = opts?.newFiles?.has(file) ? " (new file)" : "";
+    sections.push(`### ${file}${newLabel}\n\`\`\`\n${content}\n\`\`\``);
+    contents.set(file, content);
+  }
+
+  return { sections, contents, totalSize };
+}
+
 /**
  * Build full review context from the current working directory.
  */
@@ -80,39 +141,7 @@ export async function buildReviewContext(
     }
   }
 
-  const fileContents = new Map<string, string>();
-  let totalContentSize = 0;
-
-  for (const file of changedFiles) {
-    if (totalContentSize >= MAX_TOTAL_CONTENT_SIZE) {
-      fileContents.set(file, "(skipped — total content size limit reached)");
-      continue;
-    }
-
-    onStatus?.(`reading ${file}…`);
-    try {
-      const readResult = await pi.exec("head", ["-c", String(MAX_FILE_SIZE + 100), file], {
-        timeout: 5000,
-      });
-
-      if (readResult.code !== 0 || !readResult.stdout) {
-        fileContents.set(file, "(could not read — file may be deleted)");
-        continue;
-      }
-
-      let content = readResult.stdout;
-      totalContentSize += content.length;
-
-      if (content.length > MAX_FILE_SIZE) {
-        content =
-          content.slice(0, MAX_FILE_SIZE) + `\n\n... (truncated, ${content.length} total chars)`;
-      }
-
-      fileContents.set(file, content);
-    } catch {
-      fileContents.set(file, "(could not read — file may be deleted)");
-    }
-  }
+  const { contents: fileContents } = await readChangedFiles(pi, changedFiles, { onStatus });
 
   onStatus?.("scanning file tree…");
   const treeResult = await pi.exec(
@@ -187,6 +216,13 @@ export async function getBestReviewContent(
   gitRoots?: Set<string>,
 ): Promise<ReviewContent | null> {
   log("getBestReviewContent: gitRoots=", gitRoots ? [...gitRoots] : "none", "toolCalls=", agentToolCalls.length);
+
+  // Build tool call summary once for all paths
+  const changeSummary = buildChangeSummary(agentToolCalls);
+  const summarySection = changeSummary.trim()
+    ? `\n\n---\n\n## Agent tool calls (what was changed)\n\n${changeSummary}`
+    : "";
+
   // 1. Try each known git root
   if (gitRoots && gitRoots.size > 0) {
     const allContexts: string[] = [];
@@ -265,31 +301,11 @@ export async function getBestReviewContent(
       allFiles.push(...filteredFiles.map((f) => `${root}/${f}`));
 
       // Read full contents of each changed file
-      const fileSections: string[] = [];
-      let totalContentSize = 0;
-      for (const file of filteredFiles) {
-        if (totalContentSize >= MAX_TOTAL_CONTENT_SIZE) {
-          fileSections.push(`### ${file}\n(skipped — total content size limit reached)`);
-          continue;
-        }
-        onStatus?.(`reading ${root}/${file}…`);
-        const readResult = await pi.exec(
-          "head", ["-c", String(MAX_FILE_SIZE + 100), `${root}/${file}`],
-          { timeout: 5000 },
-        );
-        if (readResult.code !== 0 || !readResult.stdout) {
-          fileSections.push(`### ${file}\n(could not read — file may be deleted)`);
-          continue;
-        }
-        let content = readResult.stdout;
-        totalContentSize += content.length;
-        if (content.length > MAX_FILE_SIZE) {
-          content = content.slice(0, MAX_FILE_SIZE) +
-            `\n\n... (truncated, ${content.length} total chars)`;
-        }
-        const newLabel = untrackedFiles.has(file) ? " (new file)" : "";
-        fileSections.push(`### ${file}${newLabel}\n\`\`\`\n${content}\n\`\`\``);
-      }
+      const { sections: fileSections } = await readChangedFiles(pi, filteredFiles, {
+        root,
+        newFiles: untrackedFiles,
+        onStatus,
+      });
 
       // Re-run diff scoped to filtered files only (use correct range)
       let scopedDiff = diff;
@@ -329,11 +345,6 @@ export async function getBestReviewContent(
     }
 
     if (allContexts.length > 0) {
-      // Append tool call summary so the reviewer sees exactly what edits were made
-      const changeSummary = buildChangeSummary(agentToolCalls);
-      const summarySection = changeSummary.trim()
-        ? `\n\n---\n\n## Agent tool calls (what was changed)\n\n${changeSummary}`
-        : "";
       log("path1: returning", allContexts.length, "repo(s)", "files=", allFiles);
       return {
         content: allContexts.join("\n\n---\n\n") + summarySection,
@@ -347,10 +358,6 @@ export async function getBestReviewContent(
   const reviewContext = await buildReviewContext(pi, onStatus, ignorePatterns);
   if (reviewContext) {
     log("path2: cwd git repo, files=", reviewContext.changedFiles);
-    const changeSummary = buildChangeSummary(agentToolCalls);
-    const summarySection = changeSummary.trim()
-      ? `\n\n## Agent tool calls (what was changed)\n\n${changeSummary}`
-      : "";
     return {
       content: formatReviewContext(reviewContext) + summarySection,
       label: "",
@@ -374,29 +381,8 @@ export async function getBestReviewContent(
         nameResult.code === 0 ? nameResult.stdout.trim().split("\n").filter(Boolean) : [];
 
       // Read full contents of changed files
-      const fileSections: string[] = [];
-      let totalContentSize = 0;
-      for (const file of files) {
-        if (totalContentSize >= MAX_TOTAL_CONTENT_SIZE) break;
-        onStatus?.(`reading ${file}…`);
-        const readResult = await pi.exec(
-          "head", ["-c", String(MAX_FILE_SIZE + 100), file],
-          { timeout: 5000 },
-        );
-        if (readResult.code !== 0 || !readResult.stdout) continue;
-        let content = readResult.stdout;
-        totalContentSize += content.length;
-        if (content.length > MAX_FILE_SIZE) {
-          content = content.slice(0, MAX_FILE_SIZE) +
-            `\n\n... (truncated, ${content.length} total chars)`;
-        }
-        fileSections.push(`### ${file}\n\`\`\`\n${content}\n\`\`\``);
-      }
+      const { sections: fileSections } = await readChangedFiles(pi, files, { onStatus });
 
-      const changeSummary = buildChangeSummary(agentToolCalls);
-      const summarySection = changeSummary.trim()
-        ? `\n\n## Agent tool calls (what was changed)\n\n${changeSummary}`
-        : "";
       const fileSection = fileSections.length > 0
         ? `\n\n## Full file contents\n\n${fileSections.join("\n\n")}`
         : "";
@@ -452,12 +438,10 @@ export async function getBestReviewContent(
     }
 
     // Also include the tool call summary for context
-    const summary = buildChangeSummary(agentToolCalls);
-
-    if (parts.length > 0 || summary.trim()) {
+    if (parts.length > 0 || changeSummary.trim()) {
       const content = [
         parts.length > 0 ? `## Files (read directly, no git)\n\n${parts.join("\n\n")}` : "",
-        summary.trim() ? `## Tool call summary\n\n${summary}` : "",
+        changeSummary.trim() ? `## Tool call summary\n\n${changeSummary}` : "",
       ]
         .filter(Boolean)
         .join("\n\n---\n\n");

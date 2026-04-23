@@ -4,6 +4,18 @@
 
 ## Open Issues
 
+### B3. `buildRepoContext` ignores agent-modified file list — reviews wrong files
+**Problem:** When agent creates new (untracked) files via `write`, `buildRepoContext` runs `git diff HEAD` on the entire repo. If the working tree has no staged/modified *tracked* files, the diff is empty and the code falls through to the `git diff HEAD~1 HEAD` (last commit) branch. This branch always has content, so it "succeeds" — but it reviews the *last commit's* files instead of the untracked files the agent just created.
+**Root cause (two-part):**
+1. The untracked-file discovery only runs when `git diff HEAD` is non-empty (step 1) or when ALL diffs are empty (step 3). The "last commit" fallback (step 2) short-circuits before untracked files are checked.
+2. More fundamentally, `buildRepoContext` never receives the set of files the agent actually modified (`modifiedFiles` / `collectModifiedPaths`). It does a blanket repo-wide diff instead of scoping to agent-touched files. This means even when it does find changes, it may review irrelevant files.
+**Fix:**
+- Always check for untracked files in `buildRepoContext`, not just in step 1 and step 3.
+- Pass `modifiedFiles` into `getContentFromGitRoots` → `buildRepoContext` and use it to scope/prioritize which files are reviewed. If the agent touched specific files, prefer those over a blanket repo diff.
+- When only untracked files exist (no tracked changes), don't fall through to the last-commit path — go directly to untracked-only.
+**Priority:** HIGH — reviewer sees stale/wrong files, missing the actual changes.
+**Status:** [x] Fixed
+
 ### B2. Ctrl+Alt+R does NOT cancel an in-progress review
 **Problem:** Pressing Ctrl+Alt+R while the status bar says "reviewing…" does nothing. `reviewAbort.abort()` fires per the log, but the review session doesn't respond to the AbortSignal and keeps running until its own timeout.
 **Suspected causes:**

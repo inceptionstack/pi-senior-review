@@ -265,23 +265,27 @@ async function buildRepoContext(
   let commitLabel = "";
   const untrackedFiles = new Set<string>();
 
-  // Try uncommitted changes
+  // Always check for untracked (new) files first — these are invisible to git diff
+  const untracked = await listUntrackedFiles(pi, root);
+  for (const f of untracked) untrackedFiles.add(f);
+
+  // Try uncommitted changes (staged + unstaged vs HEAD)
   const result = await pi.exec("git", ["-C", root, "diff", "HEAD"], { timeout: 15000 });
   if (result.code === 0 && result.stdout.trim()) {
     diff = result.stdout.trim();
     files = await listDiffFiles(pi, root, "HEAD");
 
-    // Also include untracked (new) files
-    const untracked = await listUntrackedFiles(pi, root);
+    // Merge in untracked files
     const existing = new Set(files);
     for (const f of untracked) {
-      if (!existing.has(f)) {
-        files.push(f);
-        untrackedFiles.add(f);
-      }
+      if (!existing.has(f)) files.push(f);
     }
+  } else if (untracked.length > 0) {
+    // No tracked changes but we have untracked files — use those directly
+    // (don't fall through to last-commit which would review stale files)
+    files = [...untracked];
   } else {
-    // Fall back to last commit
+    // No uncommitted changes AND no untracked files — fall back to last commit
     const lastResult = await pi.exec("git", ["-C", root, "diff", "HEAD~1", "HEAD"], { timeout: 15000 });
     if (lastResult.code === 0 && lastResult.stdout.trim()) {
       diff = lastResult.stdout.trim();
@@ -291,12 +295,8 @@ async function buildRepoContext(
     }
   }
 
-  // If still no diff, check for untracked files only
-  if (!diff) {
-    files = await listUntrackedFiles(pi, root);
-    for (const f of files) untrackedFiles.add(f);
-    if (files.length === 0) return null;
-  }
+  // If still nothing found, bail out
+  if (files.length === 0 && !diff) return null;
 
   const filteredFiles = ignorePatterns ? filterIgnored(files, ignorePatterns) : files;
   if (filteredFiles.length === 0) return null;

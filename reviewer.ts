@@ -28,6 +28,8 @@ export interface ReviewResult {
 export interface ReviewOptions {
   signal: AbortSignal;
   cwd: string;
+  /** "provider/model-id" to use for the reviewer */
+  model?: string;
   /** Called when the reviewer uses tools — for status bar updates */
   onActivity?: (description: string) => void;
 }
@@ -46,9 +48,22 @@ export async function runReviewSession(prompt: string, opts: ReviewOptions): Pro
     sessionManager: SessionManager.inMemory(),
     authStorage,
     modelRegistry,
-    // Read-only tools: read, grep, find, ls — no write/edit/bash
     tools: createReadOnlyTools(opts.cwd),
   });
+
+  // Set the reviewer model if specified
+  if (opts.model) {
+    const [provider, modelId] = opts.model.split("/", 2);
+    if (provider && modelId) {
+      const model = modelRegistry.find(provider, modelId);
+      if (model) {
+        await session.setModel(model);
+        console.log(`[auto-review] Using reviewer model: ${opts.model}`);
+      } else {
+        console.log(`[auto-review] Model ${opts.model} not found, using default`);
+      }
+    }
+  }
 
   let reviewText = "";
   const unsub = session.subscribe((ev: AgentSessionEvent) => {

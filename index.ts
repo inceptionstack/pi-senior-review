@@ -79,10 +79,12 @@ Do NOT suggest stylistic preferences. Only flag real problems.`;
 
 interface AutoReviewSettings {
   maxReviewLoops: number;
+  model: string; // "provider/model-id" e.g. "amazon-bedrock/anthropic.claude-opus-4-6-v1"
 }
 
 const DEFAULT_SETTINGS: AutoReviewSettings = {
   maxReviewLoops: 100,
+  model: "amazon-bedrock/anthropic.claude-opus-4-6-v1",
 };
 
 // ── Config loading ───────────────────────────────────
@@ -131,6 +133,16 @@ async function loadSettings(
       } else {
         errors.push(
           `[auto-review] "maxReviewLoops" must be a positive integer (got ${JSON.stringify(parsed.maxReviewLoops)}). Using default: ${DEFAULT_SETTINGS.maxReviewLoops}.`,
+        );
+      }
+    }
+
+    if ("model" in parsed) {
+      if (typeof parsed.model === "string" && parsed.model.includes("/")) {
+        settings.model = parsed.model;
+      } else {
+        errors.push(
+          `[auto-review] "model" must be "provider/model-id" (got ${JSON.stringify(parsed.model)}). Using default: ${DEFAULT_SETTINGS.model}.`,
         );
       }
     }
@@ -302,6 +314,7 @@ export default function (pi: ExtensionAPI) {
       const result = await runReviewSession(prompt, {
         signal: reviewAbort.signal,
         cwd: ctx.cwd,
+        model: settings.model,
         onActivity: (desc) => updateStatus(ctx, desc),
       });
 
@@ -411,6 +424,7 @@ export default function (pi: ExtensionAPI) {
         const result = await runReviewSession(prompt, {
           signal: reviewAbort!.signal,
           cwd: ctx.cwd,
+          model: settings.model,
         });
 
         sendReviewResult(pi, result, commitLabel);
@@ -454,11 +468,11 @@ export default function (pi: ExtensionAPI) {
       console.log(err);
       if (ctx.hasUI) ctx.ui.notify(err, "warning");
     }
-    if (
-      settingsResult.errors.length === 0 &&
-      settings.maxReviewLoops !== DEFAULT_SETTINGS.maxReviewLoops
-    ) {
-      console.log(`[auto-review] maxReviewLoops = ${settings.maxReviewLoops}`);
+    if (settingsResult.errors.length === 0) {
+      if (settings.maxReviewLoops !== DEFAULT_SETTINGS.maxReviewLoops) {
+        console.log(`[auto-review] maxReviewLoops = ${settings.maxReviewLoops}`);
+      }
+      console.log(`[auto-review] reviewer model: ${settings.model}`);
     }
 
     updateStatus(ctx);

@@ -246,12 +246,20 @@ export default function (pi: ExtensionAPI) {
 
       if (!reviewText.trim() || reviewText.includes("LGTM")) {
         console.log("[code-review] Reviewer says: LGTM");
+        pi.sendMessage(
+          {
+            customType: "code-review",
+            content: `✅ **Automated Code Review**\n\nReview found no issues. Looks good!`,
+            display: true,
+          },
+          { triggerTurn: false, deliverAs: "followUp" },
+        );
       } else {
         console.log("[code-review] Reviewer found issues, feeding back...");
         pi.sendMessage(
           {
             customType: "code-review",
-            content: `🔍 **Automated Code Review**\n\nA separate reviewer examined your recent changes and found potential issues:\n\n${reviewText}\n\nPlease review these findings. If any are valid, fix them. If they're false positives, briefly explain why and move on.`,
+            content: `🔍 **Automated Code Review**\n\nA separate reviewer examined your recent changes and found potential issues:\n\n${reviewText}\n\nPlease review these findings. If any are valid, fix them. If they're false positives, briefly explain why and move on.\n\n⚠️ **Do NOT push to remote yet.** Fix any issues first. Do NOT push after fixing either — a new review cycle will check your fixes automatically.`,
             display: true,
           },
           { triggerTurn: true, deliverAs: "followUp" },

@@ -199,6 +199,7 @@ export async function getBestReviewContent(
       let diff = "";
       let files: string[] = [];
       let commitLabel = "";
+      const untrackedFiles = new Set<string>();
 
       const result = await pi.exec("git", ["-C", root, "diff", "HEAD"], { timeout: 15000 });
       if (result.code === 0 && result.stdout.trim()) {
@@ -218,7 +219,10 @@ export async function getBestReviewContent(
           const untracked = untrackedResult.stdout.trim().split("\n").filter(Boolean);
           const existing = new Set(files);
           for (const f of untracked) {
-            if (!existing.has(f)) files.push(f);
+            if (!existing.has(f)) {
+              files.push(f);
+              untrackedFiles.add(f);
+            }
           }
         }
       } else {
@@ -250,6 +254,7 @@ export async function getBestReviewContent(
         );
         if (untrackedResult.code === 0 && untrackedResult.stdout.trim()) {
           files = untrackedResult.stdout.trim().split("\n").filter(Boolean);
+          for (const f of files) untrackedFiles.add(f);
         }
         if (files.length === 0) continue;
       }
@@ -282,10 +287,8 @@ export async function getBestReviewContent(
           content = content.slice(0, MAX_FILE_SIZE) +
             `\n\n... (truncated, ${content.length} total chars)`;
         }
-        fileSections.push(`### ${file}\n\`\`\`\n${content}\n\`\`\``);
-      }
-
-      // Re-run diff scoped to filtered files only (use correct range)
+        const newLabel = untrackedFiles.has(file) ? " (new file)" : "";
+        fileSections.push(`### ${file}${newLabel}\n\`\`\`\n${content}\n\`\`\``); to filtered files only (use correct range)
       let scopedDiff = diff;
       if (ignorePatterns && filteredFiles.length < files.length) {
         const scopedArgs = commitLabel
@@ -309,9 +312,13 @@ export async function getBestReviewContent(
         ? `## Recent commits\n\`\`\`\n${commitLog}\n\`\`\`\n\n`
         : "";
 
+      const fileList = filteredFiles
+        .map(f => untrackedFiles.has(f) ? `${f} (new)` : f)
+        .join(", ");
+
       allContexts.push(
         `## Repo: ${root}${commitLabel}\n\n` +
-        `Changed files: ${filteredFiles.join(", ")}\n\n` +
+        `Changed files: ${fileList}\n\n` +
         commitSection +
         `## Full file contents\n\n${fileSections.join("\n\n")}\n\n` +
         `## Git diff\n\`\`\`diff\n${truncateDiff(scopedDiff, 30000)}\n\`\`\``,

@@ -88,12 +88,12 @@ Do NOT suggest stylistic preferences. Only flag real problems.`;
 
 interface AutoReviewSettings {
   maxReviewLoops: number;
-  model: string; // "provider/model-id" e.g. "amazon-bedrock/anthropic.claude-opus-4-6-v1"
+  model: string; // "provider/model-id" e.g. "amazon-bedrock/us.anthropic.claude-opus-4-6-v1"
 }
 
 const DEFAULT_SETTINGS: AutoReviewSettings = {
   maxReviewLoops: 100,
-  model: "amazon-bedrock/anthropic.claude-opus-4-6-v1",
+  model: "amazon-bedrock/us.anthropic.claude-opus-4-6-v1",
 };
 
 // ── Config loading ───────────────────────────────────

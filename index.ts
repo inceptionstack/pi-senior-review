@@ -368,7 +368,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_execution_start", async (event, ctx) => {
     pendingArgs.set(event.toolCallId, { name: event.toolName, input: event.args });
 
-    if (isFileModifyingTool(event.toolName, event.args)) {
+    if (isFileModifyingTool(event.toolName)) {
       if (modifiedFiles.size < MAX_TRACKED_FILES) {
         if (event.args?.path) modifiedFiles.add(event.args.path);
         else modifiedFiles.add("(bash file op)");

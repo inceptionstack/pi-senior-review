@@ -14,6 +14,9 @@ export interface ReviewContext {
   fileTree: string;
 }
 
+const MAX_FILE_SIZE = 10_000;
+const MAX_TOTAL_CONTENT_SIZE = 60_000;
+
 /**
  * Build full review context from the current working directory.
  * Returns diff, changed file list, their full contents, and project file tree.
@@ -35,26 +38,40 @@ export async function buildReviewContext(
   const changedFiles =
     changedResult.code === 0 ? changedResult.stdout.trim().split("\n").filter(Boolean) : [];
 
-  // Read full contents of each changed file
+  // Read full contents of each changed file, respecting total size cap
   const fileContents = new Map<string, string>();
+  let totalContentSize = 0;
+
   for (const file of changedFiles) {
+    if (totalContentSize >= MAX_TOTAL_CONTENT_SIZE) {
+      fileContents.set(file, "(skipped — total content size limit reached)");
+      continue;
+    }
+
     onStatus?.(`reading ${file}…`);
     try {
-      const readResult = await pi.exec("cat", [file], { timeout: 5000 });
-      if (readResult.code === 0) {
-        // Limit individual file size to 10k to avoid blowing up context
-        const content = readResult.stdout;
-        if (content.length > 10000) {
-          fileContents.set(
-            file,
-            content.slice(0, 10000) + `\n\n... (truncated, ${content.length} total chars)`,
-          );
-        } else {
-          fileContents.set(file, content);
-        }
+      // Use git show for working tree version via git diff piped content,
+      // or just read the file directly via the read-friendly approach
+      const readResult = await pi.exec("git", ["show", `:${file}`], { timeout: 5000 });
+      let content: string;
+
+      if (readResult.code === 0 && readResult.stdout) {
+        content = readResult.stdout;
+      } else {
+        // Fallback: read working tree version
+        const wtResult = await pi.exec("git", ["diff", "HEAD", "--", file], { timeout: 5000 });
+        content = wtResult.stdout || "(could not read file)";
       }
+
+      if (content.length > MAX_FILE_SIZE) {
+        content =
+          content.slice(0, MAX_FILE_SIZE) + `\n\n... (truncated, ${content.length} total chars)`;
+      }
+
+      fileContents.set(file, content);
+      totalContentSize += content.length;
     } catch {
-      // File might be deleted
+      fileContents.set(file, "(could not read — file may be deleted)");
     }
   }
 

@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+#
+# Pre-commit hook: block commits containing secrets.
+# Replaces git-secrets which has grep compatibility issues.
+#
+
+PATTERNS=(
+  # Telegram bot tokens
+  'TELEGRAM_BOT_TOKEN=.*[0-9]+:AA'
+  # Anthropic API keys
+  'sk-ant-[a-zA-Z0-9]'
+  # OpenAI API keys
+  'sk-[a-zA-Z0-9]{20,}'
+  # AWS access key IDs
+  '(AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}'
+  # AWS secret access key assignments
+  'AWS_SECRET_ACCESS_KEY[=:].{20,}'
+  # Generic high-entropy secrets in assignments
+  'ANTHROPIC_API_KEY[=:].+'
+  'OPENAI_API_KEY[=:].+'
+  'NPM_TOKEN[=:].+'
+)
+
+# Known safe example strings
+ALLOWED=(
+  'AKIAIOSFODNN7EXAMPLE'
+  'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
+)
+
+FAILED=0
+
+for pattern in "${PATTERNS[@]}"; do
+  # Scan staged file contents
+  MATCHES=$(git diff --cached --diff-filter=ACM -U0 | grep -E "$pattern" 2>/dev/null)
+  if [ -n "$MATCHES" ]; then
+    # Check if all matches are in the allowed list
+    REAL_MATCH=0
+    while IFS= read -r line; do
+      IS_ALLOWED=0
+      for allowed in "${ALLOWED[@]}"; do
+        if echo "$line" | grep -qF "$allowed"; then
+          IS_ALLOWED=1
+          break
+        fi
+      done
+      if [ "$IS_ALLOWED" -eq 0 ]; then
+        REAL_MATCH=1
+        echo "ERROR: Possible secret found matching pattern '$pattern':"
+        echo "  $line"
+      fi
+    done <<< "$MATCHES"
+    if [ "$REAL_MATCH" -eq 1 ]; then
+      FAILED=1
+    fi
+  fi
+done
+
+if [ "$FAILED" -eq 1 ]; then
+  echo ""
+  echo "Commit blocked. Remove secrets before committing."
+  echo "To bypass (dangerous): git commit --no-verify"
+  exit 1
+fi
+
+exit 0

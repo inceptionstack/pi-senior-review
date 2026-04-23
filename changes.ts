@@ -65,11 +65,93 @@ export interface TrackedToolCall {
 }
 
 /**
+ * Git subcommands that don't modify tracked files (VCS operations).
+ * Used to filter out bash calls like `git push`, `git commit`, etc.
+ * Note: merge/rebase/reset/checkout CAN modify files so they're NOT here.
+ */
+const GIT_READ_ONLY_SUBCOMMANDS = new Set([
+  "push", "commit", "add", "log", "status", "diff", "show",
+  "branch", "tag", "fetch", "remote", "stash", "config",
+  "ls-files", "ls-tree", "rev-parse", "rev-list", "hash-object",
+  "blame", "reflog", "describe", "shortlog",
+]);
+
+/** Command roots that are treated as non-file-modifying regardless of args. */
+const NON_MODIFYING_COMMAND_ROOTS = new Set([
+  "aws",    // AWS CLI — API calls
+  "curl",   // HTTP requests
+  "wget",   // though wget -O writes, treat as non-modifying per user request
+  "ping",
+  "dig",
+  "nslookup",
+  "whoami",
+  "hostname",
+  "date",
+  "uname",
+  "which",
+  "type",
+  "true",
+  "false",
+  "ps",
+  "df",
+  "du",
+  "free",
+  "uptime",
+  "env",
+  "printenv",
+]);
+
+/** Single-part commands that are allowed in a chain without making it file-modifying. */
+const ALLOWED_NAVIGATION = /^(cd|export|pwd|exit|return|true|false)\b/;
+
+/**
+ * Check if a bash command part is a known non-file-modifying command.
+ */
+function isNonModifyingPart(part: string): boolean {
+  if (ALLOWED_NAVIGATION.test(part)) return true;
+
+  // Git VCS read-only operations
+  const gitMatch = part.match(/^git(?:\s+-C\s+\S+)?\s+(\w[\w-]*)/);
+  if (gitMatch) return GIT_READ_ONLY_SUBCOMMANDS.has(gitMatch[1]);
+
+  // Generic non-modifying commands (aws, curl, etc.)
+  const rootMatch = part.match(/^(\w[\w-]*)/);
+  if (rootMatch && NON_MODIFYING_COMMAND_ROOTS.has(rootMatch[1])) return true;
+
+  return false;
+}
+
+/**
+ * Check if a bash command has no file-modifying side effects.
+ * Examples: `git push`, `aws s3 ls`, `curl https://api`, `cd foo && git log`
+ */
+export function isNonFileModifyingCommand(command: string): boolean {
+  if (!command) return false;
+
+  // Split on && || ; to handle command chains
+  const parts = command.split(/&&|\|\||;/).map(p => p.trim()).filter(Boolean);
+  if (parts.length === 0) return false;
+
+  return parts.every(isNonModifyingPart);
+}
+
+/** @deprecated use isNonFileModifyingCommand */
+export function isPureGitOperation(command: string): boolean {
+  return isNonFileModifyingCommand(command);
+}
+
+/**
  * Check if any tool calls include file modifications.
- * Any bash command is conservatively treated as file-modifying.
+ * Bash commands count UNLESS they are known non-modifying (git VCS ops, API calls, etc.)
  */
 export function hasFileChanges(toolCalls: TrackedToolCall[]): boolean {
-  return toolCalls.some((tc) => FILE_MODIFYING_TOOLS.includes(tc.name) || tc.name === "bash");
+  return toolCalls.some((tc) => {
+    if (FILE_MODIFYING_TOOLS.includes(tc.name)) return true;
+    if (tc.name === "bash") {
+      return !isNonFileModifyingCommand(tc.input?.command ?? "");
+    }
+    return false;
+  });
 }
 
 /**
@@ -114,6 +196,9 @@ export function collectModifiedPaths(toolCalls: TrackedToolCall[]): string[] {
       paths.add(tc.input.path);
     }
     if (tc.name === "bash" && tc.input?.command) {
+      // Skip path extraction from non-file-modifying commands
+      // (commit messages, curl URLs, aws ARNs may look like file paths)
+      if (isNonFileModifyingCommand(tc.input.command)) continue;
       for (const p of extractPathsFromBashCommand(tc.input.command)) {
         paths.add(p);
       }

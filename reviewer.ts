@@ -43,6 +43,9 @@ export interface ReviewOptions {
  */
 export async function runReviewSession(prompt: string, opts: ReviewOptions): Promise<ReviewResult> {
   const startTime = Date.now();
+  console.log(
+    `[auto-review] Starting review session (prompt: ${(prompt.length / 1000).toFixed(1)}k chars, cwd: ${opts.cwd})`,
+  );
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
 
@@ -54,6 +57,9 @@ export async function runReviewSession(prompt: string, opts: ReviewOptions): Pro
     // Read-only tools + bash for full exploration capability
     tools: [...createReadOnlyTools(opts.cwd), createBashTool(opts.cwd)],
   });
+  console.log(
+    `[auto-review] Session created, model: ${session.model?.provider}/${session.model?.id}`,
+  );
 
   // Set the reviewer model if specified
   if (opts.model) {
@@ -124,6 +130,7 @@ export async function runReviewSession(prompt: string, opts: ReviewOptions): Pro
       const onAbort = () => {
         if (settled) return;
         settled = true;
+        clearTimeout(timeoutId);
         session.abort();
         reject(new Error("Review cancelled"));
       };
@@ -135,15 +142,30 @@ export async function runReviewSession(prompt: string, opts: ReviewOptions): Pro
 
       opts.signal.addEventListener("abort", onAbort, { once: true });
 
+      // Timeout: cancel review if it takes too long (5 minutes)
+      const REVIEW_TIMEOUT_MS = 5 * 60 * 1000;
+      const timeoutId = setTimeout(() => {
+        if (settled) return;
+        console.log(`[auto-review] Review timed out after ${REVIEW_TIMEOUT_MS / 1000}s`);
+        settled = true;
+        session.abort();
+        reject(new Error("Review timed out"));
+      }, REVIEW_TIMEOUT_MS);
+
+      console.log(`[auto-review] Calling session.prompt()...`);
       session.prompt(prompt).then(
         () => {
           settled = true;
+          clearTimeout(timeoutId);
           opts.signal.removeEventListener("abort", onAbort);
+          console.log(`[auto-review] session.prompt() resolved`);
           resolve();
         },
         (err) => {
           settled = true;
+          clearTimeout(timeoutId);
           opts.signal.removeEventListener("abort", onAbort);
+          console.log(`[auto-review] session.prompt() rejected: ${err?.message ?? err}`);
           reject(err);
         },
       );

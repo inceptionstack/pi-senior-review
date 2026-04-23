@@ -292,7 +292,34 @@ export default function (pi: ExtensionAPI) {
                     : `loop ${reviewLoopCount}/${settings.maxReviewLoops}`,
                 });
               } else {
-                ctx.ui.notify("No diff found to review.", "info");
+                // No uncommitted diff — try last commit instead
+                updateStatus(ctx, "checking last commit…");
+                const lastCommitDiff = await pi.exec("git", ["diff", "HEAD~1", "HEAD"], {
+                  timeout: 15000,
+                });
+                if (lastCommitDiff.code === 0 && lastCommitDiff.stdout.trim()) {
+                  const truncatedDiff = (await import("./helpers")).truncateDiff(
+                    lastCommitDiff.stdout.trim(),
+                    30000,
+                  );
+                  const commitLog = (
+                    await pi.exec("git", ["log", "--oneline", "-1"], {
+                      timeout: 5000,
+                    })
+                  ).stdout.trim();
+                  updateStatus(ctx, "analyzing last commit…");
+                  const prompt = `${buildReviewPrompt()}\n\n---\n\nReview the last commit:\n\nCommit: ${commitLog}\n\nDiff:\n\`\`\`diff\n${truncatedDiff}\n\`\`\``;
+                  const result = await runReviewSession(prompt, {
+                    signal: reviewAbort.signal,
+                    cwd: ctx.cwd,
+                    model: settings.model,
+                    onActivity: (desc) => updateStatus(ctx, desc),
+                  });
+                  if (result.isLgtm) reviewLoopCount = 0;
+                  sendReviewResult(pi, result, "last commit");
+                } else {
+                  ctx.ui.notify("No changes found to review.", "info");
+                }
               }
             } catch (err: any) {
               if (err?.message === "Review cancelled") {

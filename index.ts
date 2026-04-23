@@ -5,14 +5,14 @@
  * to do a code review. Feeds the review feedback back to the main agent
  * as a steering message so it can decide whether to fix anything.
  *
- * Configuration (optional, in git repo root):
- *   .autoreview/review-rules.md  — custom review rules appended to prompt
- *   .autoreview/settings.json    — { "maxReviewLoops": 100 }
+ * Configuration (optional, in cwd/.autoreview/ or ~/.pi/.autoreview/, local takes precedence):
+ *   settings.json       — { "maxReviewLoops": 100, "toggleShortcut": "alt+r", "cancelShortcut": "alt+x" }
+ *   review-rules.md     — custom review rules appended to prompt
  *
  * UX:
  *   - Status bar shows auto-review on/off + pending file count
- *   - Alt+R toggles review on/off
- *   - Alt+X or /cancel-review cancels an in-progress review
+ *   - Alt+R toggles review on/off (configurable: toggleShortcut)
+ *   - Alt+X or /cancel-review cancels an in-progress review (configurable: cancelShortcut)
  *   - Ctrl+Alt+R also cancels (terminals that support it)
  *   - /review command toggles, /review <N> reviews last N commits
  *
@@ -25,7 +25,7 @@ import { createHash } from "node:crypto";
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-import { type AutoReviewSettings, DEFAULT_SETTINGS, loadSettings, loadReviewRules } from "./settings";
+import { type AutoReviewSettings, DEFAULT_SETTINGS, loadSettings, loadReviewRules, loadShortcutSettingsSync } from "./settings";
 import { buildReviewPrompt } from "./prompt";
 import { clampCommitCount, shouldDiffAllCommits, truncateDiff } from "./helpers";
 import { runReviewSession, sendReviewResult } from "./reviewer";
@@ -63,6 +63,10 @@ export default function (pi: ExtensionAPI) {
   const modifiedFiles = new Set<string>();
   const detectedGitRoots = new Set<string>(); // git repos discovered from file paths or bash git commands
   const pendingArgs = new Map<string, { name: string; input: any }>();
+
+  // Load shortcut config synchronously at init (before session_start)
+  // so registerShortcut() uses the configured keys.
+  const shortcutConfig = loadShortcutSettingsSync(process.cwd());
 
   // ── Helpers ──────────────────────────────────────
 
@@ -147,7 +151,7 @@ export default function (pi: ExtensionAPI) {
       const activityInfo = displayActivity ? ` ${theme.fg("muted", displayActivity)}` : "";
       ctx.ui.setStatus(
         "code-review",
-        `${label} ${theme.fg("warning", "reviewing…")} ${loopInfo} ${modelInfo}${activityInfo} ${theme.fg("dim", "(Alt+X or /cancel-review)")}`,
+        `${label} ${theme.fg("warning", "reviewing…")} ${loopInfo} ${modelInfo}${activityInfo} ${theme.fg("dim", `(${shortcutConfig.cancelShortcut} or /cancel-review)`)}`,
       );
       return;
     }
@@ -496,27 +500,28 @@ export default function (pi: ExtensionAPI) {
 
   // ── Shortcuts ──────────────────────────────────────
 
-  pi.registerShortcut("ctrl+alt+r", {
+  // Cancel handler — shared by shortcut + command
+  function cancelReview(ctx: { ui: any; hasUI?: boolean }, source: string) {
+    if (isReviewing && reviewAbort) {
+      log(`Cancel requested via ${source}`);
+      reviewAbort.abort();
+      if (ctx.hasUI) ctx.ui.notify("Auto-review cancelled", "info");
+    }
+  }
+
+  // Register configurable cancel shortcut (default: alt+x)
+  pi.registerShortcut(shortcutConfig.cancelShortcut as any, {
     description: "Cancel in-progress code review",
-    handler: async (ctx) => {
-      if (isReviewing && reviewAbort) {
-        log("Cancel requested via Ctrl+Alt+R");
-        reviewAbort.abort();
-        if (ctx.hasUI) ctx.ui.notify("Auto-review cancelled", "info");
-      }
-    },
+    handler: async (ctx) => cancelReview(ctx, shortcutConfig.cancelShortcut),
   });
 
-  pi.registerShortcut("alt+x", {
-    description: "Cancel in-progress code review (iTerm2/macOS friendly)",
-    handler: async (ctx) => {
-      if (isReviewing && reviewAbort) {
-        log("Cancel requested via Alt+X");
-        reviewAbort.abort();
-        if (ctx.hasUI) ctx.ui.notify("Auto-review cancelled", "info");
-      }
-    },
-  });
+  // Also register ctrl+alt+r as a fallback (for terminals that support it)
+  if (shortcutConfig.cancelShortcut !== "ctrl+alt+r") {
+    pi.registerShortcut("ctrl+alt+r", {
+      description: "Cancel in-progress code review (fallback)",
+      handler: async (ctx) => cancelReview(ctx, "Ctrl+Alt+R"),
+    });
+  }
 
   pi.registerShortcut("ctrl+alt+shift+r", {
     description: "Full reset: cancel review, reset loop count, clear tracked files",
@@ -539,7 +544,8 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerShortcut("alt+r", {
+  // Register configurable toggle shortcut (default: alt+r)
+  pi.registerShortcut(shortcutConfig.toggleShortcut as any, {
     description: "Toggle automatic code review",
     handler: async (ctx) => toggleReview(ctx),
   });
@@ -550,9 +556,7 @@ export default function (pi: ExtensionAPI) {
     description: "Cancel an in-progress code review",
     handler: async (_args, ctx) => {
       if (isReviewing && reviewAbort) {
-        log("Cancel requested via /cancel-review");
-        reviewAbort.abort();
-        if (ctx.hasUI) ctx.ui.notify("Auto-review cancelled", "info");
+        cancelReview(ctx, "/cancel-review");
       } else {
         if (ctx.hasUI) ctx.ui.notify("No review in progress", "info");
       }

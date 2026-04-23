@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { parseSettings, DEFAULT_SETTINGS, VALID_THINKING_LEVELS } from "../settings";
+import { parseSettings, DEFAULT_SETTINGS, DEFAULT_TOGGLE_SHORTCUT, DEFAULT_CANCEL_SHORTCUT, VALID_THINKING_LEVELS, loadShortcutSettingsSync, configDirs, readConfigFile } from "../settings";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir, homedir } from "node:os";
 
 describe("parseSettings", () => {
   it("parseSettings_EmptyObject_ReturnsDefaults", () => {
@@ -159,5 +162,274 @@ describe("parseSettings", () => {
     const { settings, errors } = parseSettings({ reviewTimeoutMs: "5000" });
     expect(settings.reviewTimeoutMs).toBe(DEFAULT_SETTINGS.reviewTimeoutMs);
     expect(errors.length).toBe(1);
+  });
+
+  // ── toggleShortcut ──
+
+  it("parseSettings_ValidToggleShortcut_Applies", () => {
+    const { settings, errors } = parseSettings({ toggleShortcut: "ctrl+r" });
+    expect(settings.toggleShortcut).toBe("ctrl+r");
+    expect(errors).toEqual([]);
+  });
+
+  it("parseSettings_EmptyToggleShortcut_RejectsWithError", () => {
+    const { settings, errors } = parseSettings({ toggleShortcut: "" });
+    expect(settings.toggleShortcut).toBe(DEFAULT_SETTINGS.toggleShortcut);
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain("toggleShortcut");
+  });
+
+  it("parseSettings_NonStringToggleShortcut_RejectsWithError", () => {
+    const { settings, errors } = parseSettings({ toggleShortcut: 42 });
+    expect(settings.toggleShortcut).toBe(DEFAULT_SETTINGS.toggleShortcut);
+    expect(errors.length).toBe(1);
+  });
+
+  it("parseSettings_ToggleShortcutTrimsWhitespace", () => {
+    const { settings, errors } = parseSettings({ toggleShortcut: "  ctrl+t  " });
+    expect(settings.toggleShortcut).toBe("ctrl+t");
+    expect(errors).toEqual([]);
+  });
+
+  // ── cancelShortcut ──
+
+  it("parseSettings_ValidCancelShortcut_Applies", () => {
+    const { settings, errors } = parseSettings({ cancelShortcut: "ctrl+shift+x" });
+    expect(settings.cancelShortcut).toBe("ctrl+shift+x");
+    expect(errors).toEqual([]);
+  });
+
+  it("parseSettings_EmptyCancelShortcut_RejectsWithError", () => {
+    const { settings, errors } = parseSettings({ cancelShortcut: "" });
+    expect(settings.cancelShortcut).toBe(DEFAULT_SETTINGS.cancelShortcut);
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain("cancelShortcut");
+  });
+
+  it("parseSettings_NonStringCancelShortcut_RejectsWithError", () => {
+    const { settings, errors } = parseSettings({ cancelShortcut: true });
+    expect(settings.cancelShortcut).toBe(DEFAULT_SETTINGS.cancelShortcut);
+    expect(errors.length).toBe(1);
+  });
+
+  it("parseSettings_CancelShortcutTrimsWhitespace", () => {
+    const { settings, errors } = parseSettings({ cancelShortcut: "  alt+c  " });
+    expect(settings.cancelShortcut).toBe("alt+c");
+    expect(errors).toEqual([]);
+  });
+
+  it("parseSettings_BothShortcutsConfigured_AppliesBoth", () => {
+    const { settings, errors } = parseSettings({
+      toggleShortcut: "ctrl+r",
+      cancelShortcut: "ctrl+q",
+    });
+    expect(settings.toggleShortcut).toBe("ctrl+r");
+    expect(settings.cancelShortcut).toBe("ctrl+q");
+    expect(errors).toEqual([]);
+  });
+});
+
+describe("loadShortcutSettingsSync", () => {
+  function makeTmpDir() {
+    const dir = mkdtempSync(join(tmpdir(), "autoreview-test-"));
+    return {
+      dir,
+      writeSettings(obj: Record<string, unknown>) {
+        const settingsDir = join(dir, ".autoreview");
+        mkdirSync(settingsDir, { recursive: true });
+        writeFileSync(join(settingsDir, "settings.json"), JSON.stringify(obj));
+      },
+      cleanup() {
+        rmSync(dir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  it("returns defaults when no settings file exists", () => {
+    const tmp = makeTmpDir();
+    try {
+      const result = loadShortcutSettingsSync(tmp.dir);
+      expect(result.toggleShortcut).toBe(DEFAULT_TOGGLE_SHORTCUT);
+      expect(result.cancelShortcut).toBe(DEFAULT_CANCEL_SHORTCUT);
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it("returns defaults when settings file is invalid JSON", () => {
+    const tmp = makeTmpDir();
+    try {
+      const settingsDir = join(tmp.dir, ".autoreview");
+      mkdirSync(settingsDir, { recursive: true });
+      writeFileSync(join(settingsDir, "settings.json"), "not json");
+      const result = loadShortcutSettingsSync(tmp.dir);
+      expect(result.toggleShortcut).toBe(DEFAULT_TOGGLE_SHORTCUT);
+      expect(result.cancelShortcut).toBe(DEFAULT_CANCEL_SHORTCUT);
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it("returns defaults when settings has no shortcut keys", () => {
+    const tmp = makeTmpDir();
+    try {
+      tmp.writeSettings({ maxReviewLoops: 5 });
+      const result = loadShortcutSettingsSync(tmp.dir);
+      expect(result.toggleShortcut).toBe(DEFAULT_TOGGLE_SHORTCUT);
+      expect(result.cancelShortcut).toBe(DEFAULT_CANCEL_SHORTCUT);
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it("reads custom toggleShortcut", () => {
+    const tmp = makeTmpDir();
+    try {
+      tmp.writeSettings({ toggleShortcut: "ctrl+r" });
+      const result = loadShortcutSettingsSync(tmp.dir);
+      expect(result.toggleShortcut).toBe("ctrl+r");
+      expect(result.cancelShortcut).toBe(DEFAULT_CANCEL_SHORTCUT);
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it("reads custom cancelShortcut", () => {
+    const tmp = makeTmpDir();
+    try {
+      tmp.writeSettings({ cancelShortcut: "ctrl+q" });
+      const result = loadShortcutSettingsSync(tmp.dir);
+      expect(result.toggleShortcut).toBe(DEFAULT_TOGGLE_SHORTCUT);
+      expect(result.cancelShortcut).toBe("ctrl+q");
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it("reads both custom shortcuts", () => {
+    const tmp = makeTmpDir();
+    try {
+      tmp.writeSettings({ toggleShortcut: "f5", cancelShortcut: "f6" });
+      const result = loadShortcutSettingsSync(tmp.dir);
+      expect(result.toggleShortcut).toBe("f5");
+      expect(result.cancelShortcut).toBe("f6");
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it("ignores non-string shortcut values and uses defaults", () => {
+    const tmp = makeTmpDir();
+    try {
+      tmp.writeSettings({ toggleShortcut: 123, cancelShortcut: false });
+      const result = loadShortcutSettingsSync(tmp.dir);
+      expect(result.toggleShortcut).toBe(DEFAULT_TOGGLE_SHORTCUT);
+      expect(result.cancelShortcut).toBe(DEFAULT_CANCEL_SHORTCUT);
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it("ignores empty string shortcuts and uses defaults", () => {
+    const tmp = makeTmpDir();
+    try {
+      tmp.writeSettings({ toggleShortcut: "", cancelShortcut: "  " });
+      const result = loadShortcutSettingsSync(tmp.dir);
+      expect(result.toggleShortcut).toBe(DEFAULT_TOGGLE_SHORTCUT);
+      expect(result.cancelShortcut).toBe(DEFAULT_CANCEL_SHORTCUT);
+    } finally {
+      tmp.cleanup();
+    }
+  });
+
+  it("trims whitespace from shortcut values", () => {
+    const tmp = makeTmpDir();
+    try {
+      tmp.writeSettings({ cancelShortcut: "  ctrl+x  " });
+      const result = loadShortcutSettingsSync(tmp.dir);
+      expect(result.cancelShortcut).toBe("ctrl+x");
+    } finally {
+      tmp.cleanup();
+    }
+  });
+});
+
+describe("configDirs", () => {
+  it("returns local and global dirs", () => {
+    const [local, global] = configDirs("/project");
+    expect(local).toBe(join("/project", ".autoreview"));
+    expect(global).toBe(join(homedir(), ".pi", ".autoreview"));
+  });
+
+  it("accepts custom home override", () => {
+    const [local, global] = configDirs("/project", "/fakehome");
+    expect(local).toBe(join("/project", ".autoreview"));
+    expect(global).toBe(join("/fakehome", ".pi", ".autoreview"));
+  });
+});
+
+describe("readConfigFile", () => {
+  function makeDirs() {
+    const root = mkdtempSync(join(tmpdir(), "autoreview-cfg-"));
+    const localDir = join(root, "project");
+    const fakeHome = join(root, "home");
+    const localCfg = join(localDir, ".autoreview");
+    const globalCfg = join(fakeHome, ".pi", ".autoreview");
+    mkdirSync(localCfg, { recursive: true });
+    mkdirSync(globalCfg, { recursive: true });
+    return {
+      root,
+      localDir,
+      fakeHome,
+      localCfg,
+      globalCfg,
+      cleanup() {
+        rmSync(root, { recursive: true, force: true });
+      },
+    };
+  }
+
+  it("returns null when file not in either location", async () => {
+    const d = makeDirs();
+    try {
+      const result = await readConfigFile(d.localDir, "missing.json", d.fakeHome);
+      expect(result).toBeNull();
+    } finally {
+      d.cleanup();
+    }
+  });
+
+  it("reads from global when local missing", async () => {
+    const d = makeDirs();
+    try {
+      writeFileSync(join(d.globalCfg, "test.txt"), "global-content");
+      const result = await readConfigFile(d.localDir, "test.txt", d.fakeHome);
+      expect(result).toBe("global-content");
+    } finally {
+      d.cleanup();
+    }
+  });
+
+  it("reads from local when both exist (local takes precedence)", async () => {
+    const d = makeDirs();
+    try {
+      writeFileSync(join(d.localCfg, "test.txt"), "local-content");
+      writeFileSync(join(d.globalCfg, "test.txt"), "global-content");
+      const result = await readConfigFile(d.localDir, "test.txt", d.fakeHome);
+      expect(result).toBe("local-content");
+    } finally {
+      d.cleanup();
+    }
+  });
+
+  it("reads from local when only local exists", async () => {
+    const d = makeDirs();
+    try {
+      writeFileSync(join(d.localCfg, "test.txt"), "local-only");
+      const result = await readConfigFile(d.localDir, "test.txt", d.fakeHome);
+      expect(result).toBe("local-only");
+    } finally {
+      d.cleanup();
+    }
   });
 });

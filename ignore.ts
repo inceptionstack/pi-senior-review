@@ -12,23 +12,18 @@
  *   - Trailing / means directory (treated as dir/**)
  */
 
-import { readFile } from "node:fs/promises";
-import { join, basename } from "node:path";
+import { basename } from "node:path";
 import { log } from "./logger";
+import { readConfigFile } from "./settings";
 
 /**
  * Parse an ignore file into a list of patterns.
- * Returns null if the file doesn't exist.
+ * Tries cwd/.autoreview/ first, then ~/.pi/.autoreview/.
  */
 export async function loadIgnorePatterns(cwd: string): Promise<string[] | null> {
-  try {
-    const content = await readFile(join(cwd, ".autoreview", "ignore"), "utf8");
-    return parseIgnoreFile(content);
-  } catch (err: any) {
-    if (err?.code === "ENOENT") return null;
-    log(`Warning: could not read .autoreview/ignore: ${err?.message}`);
-    return null;
-  }
+  const content = await readConfigFile(cwd, "ignore");
+  if (content === null) return null;
+  return parseIgnoreFile(content);
 }
 
 /**

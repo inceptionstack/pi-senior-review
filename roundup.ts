@@ -5,11 +5,9 @@
  * accumulated tech debt, and documentation accuracy.
  */
 
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { runReviewSession } from "./reviewer";
+import { readConfigFile } from "./settings";
 
 const DEFAULT_ROUNDUP_PROMPT = `You are a senior architect doing a final "zoom out" review. A series of code changes were just made and passed individual mini-reviews. Now step back and look at the big picture.
 
@@ -49,12 +47,8 @@ Focus on systemic issues that individual mini-reviews would miss.
 Do NOT repeat issues that were already found and fixed in mini-reviews.`;
 
 export async function loadRoundupRules(cwd: string): Promise<string | null> {
-  try {
-    const content = await readFile(join(cwd, ".autoreview", "roundup.md"), "utf8");
-    return content.trim() || null;
-  } catch {
-    return null;
-  }
+  const content = await readConfigFile(cwd, "roundup.md");
+  return content?.trim() || null;
 }
 
 export function buildRoundupPrompt(customRules: string | null): string {

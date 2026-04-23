@@ -219,9 +219,15 @@ export default function (pi: ExtensionAPI) {
 
     if (FILE_MODIFYING_TOOLS.includes(event.toolName)) {
       trackFileChange(event.args);
+      console.log(
+        `[auto-review] tracked file change: ${event.toolName} ${event.args?.path ?? "(unknown)"}`,
+      );
       updateStatus(ctx);
     } else if (event.toolName === "bash" && BASH_FILE_PATTERN.test(event.args?.command ?? "")) {
       modifiedFiles.add("(bash file op)");
+      console.log(
+        `[auto-review] tracked bash file op: ${(event.args?.command ?? "").slice(0, 80)}`,
+      );
       updateStatus(ctx);
     }
   });
@@ -250,6 +256,10 @@ export default function (pi: ExtensionAPI) {
   // ── Review on agent_end ────────────────────────────
 
   pi.on("agent_end", async (_event, ctx) => {
+    console.log(
+      `[auto-review] agent_end: enabled=${reviewEnabled}, toolCalls=${agentToolCalls.length}, files=${modifiedFiles.size}, tools=[${agentToolCalls.map((t) => t.name).join(", ")}]`,
+    );
+
     if (!reviewEnabled) {
       agentToolCalls = [];
       modifiedFiles.clear();

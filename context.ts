@@ -41,12 +41,25 @@ export async function buildReviewContext(
   const fullDiffResult = await pi.exec("git", ["diff", "HEAD"], { timeout: 15000 });
   let diff = fullDiffResult.code === 0 ? fullDiffResult.stdout.trim() : "";
 
-  if (!diff) return null;
-
   onStatus?.("listing changed files…");
   const changedResult = await pi.exec("git", ["diff", "HEAD", "--name-only"], { timeout: 5000 });
   let changedFiles =
     changedResult.code === 0 ? changedResult.stdout.trim().split("\n").filter(Boolean) : [];
+
+  // Include untracked (new) files
+  const untrackedResult = await pi.exec(
+    "git", ["ls-files", "--others", "--exclude-standard"],
+    { timeout: 5000 },
+  );
+  if (untrackedResult.code === 0 && untrackedResult.stdout.trim()) {
+    const untracked = untrackedResult.stdout.trim().split("\n").filter(Boolean);
+    const existing = new Set(changedFiles);
+    for (const f of untracked) {
+      if (!existing.has(f)) changedFiles.push(f);
+    }
+  }
+
+  if (!diff && changedFiles.length === 0) return null;
 
   if (ignorePatterns && ignorePatterns.length > 0) {
     const before = changedFiles.length;
@@ -195,6 +208,19 @@ export async function getBestReviewContent(
         });
         files =
           nameResult.code === 0 ? nameResult.stdout.trim().split("\n").filter(Boolean) : [];
+
+        // Also include untracked (new) files — git diff HEAD misses them
+        const untrackedResult = await pi.exec(
+          "git", ["-C", root, "ls-files", "--others", "--exclude-standard"],
+          { timeout: 5000 },
+        );
+        if (untrackedResult.code === 0 && untrackedResult.stdout.trim()) {
+          const untracked = untrackedResult.stdout.trim().split("\n").filter(Boolean);
+          const existing = new Set(files);
+          for (const f of untracked) {
+            if (!existing.has(f)) files.push(f);
+          }
+        }
       } else {
         // Try last commit
         const lastResult = await pi.exec("git", ["-C", root, "diff", "HEAD~1", "HEAD"], {
@@ -216,7 +242,17 @@ export async function getBestReviewContent(
         }
       }
 
-      if (!diff) continue;
+      // If no diff from tracked changes, check for untracked files only
+      if (!diff) {
+        const untrackedResult = await pi.exec(
+          "git", ["-C", root, "ls-files", "--others", "--exclude-standard"],
+          { timeout: 5000 },
+        );
+        if (untrackedResult.code === 0 && untrackedResult.stdout.trim()) {
+          files = untrackedResult.stdout.trim().split("\n").filter(Boolean);
+        }
+        if (files.length === 0) continue;
+      }
 
       const filteredFiles = ignorePatterns ? filterIgnored(files, ignorePatterns) : files;
       if (filteredFiles.length === 0) continue;

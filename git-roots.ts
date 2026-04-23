@@ -1,6 +1,7 @@
 /**
  * git-roots.ts — Detect git repo roots from modified file paths
  * Expands ~ to homedir for correct path resolution.
+ * Caches resolved roots to avoid repeated git calls.
  */
 
 import { dirname, resolve, isAbsolute } from "node:path";

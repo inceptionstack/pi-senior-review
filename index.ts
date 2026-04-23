@@ -308,7 +308,9 @@ export default function (pi: ExtensionAPI) {
               if (err?.message === "Review cancelled") {
                 ctx.ui.notify("Auto-review cancelled", "info");
               } else {
-                console.error("[auto-review] Review failed:", err);
+                const errMsg = err?.message ?? String(err);
+                console.error("[auto-review] Review failed:", errMsg);
+                ctx.ui.notify(`Auto-review error: ${errMsg.slice(0, 200)}`, "error");
               }
             } finally {
               isReviewing = false;
@@ -496,7 +498,17 @@ export default function (pi: ExtensionAPI) {
       if (err?.message === "Review cancelled") {
         if (ctx.hasUI) ctx.ui.notify("Auto-review cancelled", "info");
       } else {
-        console.error("[auto-review] Review failed:", err);
+        const errMsg = err?.message ?? String(err);
+        console.error("[auto-review] Review failed:", errMsg);
+        if (ctx.hasUI) ctx.ui.notify(`Auto-review error: ${errMsg.slice(0, 200)}`, "error");
+        pi.sendMessage(
+          {
+            customType: "code-review",
+            content: `⚠️ **Auto-review failed**\n\n${errMsg}\n\nThe review could not complete. Check the model configuration in .autoreview/settings.json.`,
+            display: true,
+          },
+          { triggerTurn: false, deliverAs: "followUp" },
+        );
       }
     } finally {
       isReviewing = false;

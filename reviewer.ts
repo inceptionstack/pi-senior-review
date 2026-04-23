@@ -61,10 +61,16 @@ export async function runReviewSession(prompt: string, opts: ReviewOptions): Pro
     if (provider && modelId) {
       const model = modelRegistry.find(provider, modelId);
       if (model) {
-        await session.setModel(model);
-        console.log(`[auto-review] Using reviewer model: ${opts.model}`);
+        const success = await session.setModel(model);
+        if (success) {
+          console.log(`[auto-review] Using reviewer model: ${opts.model}`);
+        } else {
+          console.log(`[auto-review] ⚠️ Model ${opts.model} found but no API key. Using default.`);
+          opts.onActivity?.("⚠️ model key missing, using default");
+        }
       } else {
-        console.log(`[auto-review] Model ${opts.model} not found, using default`);
+        console.log(`[auto-review] ⚠️ Model ${opts.model} not found. Using default.`);
+        opts.onActivity?.("⚠️ model not found, using default");
       }
     }
   }

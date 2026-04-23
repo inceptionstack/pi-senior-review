@@ -3,7 +3,8 @@
  */
 
 export const FILE_MODIFYING_TOOLS = ["write", "edit"];
-export const BASH_FILE_PATTERN = /\b(cat\s*>|tee|sed\s+-i|mv\s|cp\s|rm\s|mkdir|echo\s.*>)\b/;
+export const BASH_FILE_PATTERN =
+  /\b(cat\s*>|tee\s|sed\s+-i|mv\s|cp\s|rm\s|mkdir\s|echo\s.*>|python3?\s|node\s+-e|npx\s+prettier\s+--write|chmod\s|chown\s|touch\s|truncate\s|dd\s|install\s)\b|\bwith\s+open\(|>\s*['"]?\//;
 
 export interface TrackedToolCall {
   name: string;
@@ -15,19 +16,17 @@ export interface TrackedToolCall {
  * Check if any tool calls include file modifications.
  */
 export function hasFileChanges(toolCalls: TrackedToolCall[]): boolean {
-  return toolCalls.some(
-    (tc) =>
-      FILE_MODIFYING_TOOLS.includes(tc.name) ||
-      (tc.name === "bash" && BASH_FILE_PATTERN.test(tc.input?.command ?? "")),
-  );
+  return toolCalls.some((tc) => FILE_MODIFYING_TOOLS.includes(tc.name) || tc.name === "bash");
 }
 
 /**
  * Check if a single tool call modifies files.
+ * For bash, we conservatively assume any bash command might modify files.
+ * The reviewer will check git diff and skip if nothing actually changed.
  */
-export function isFileModifyingTool(toolName: string, args?: any): boolean {
+export function isFileModifyingTool(toolName: string, _args?: any): boolean {
   if (FILE_MODIFYING_TOOLS.includes(toolName)) return true;
-  if (toolName === "bash" && BASH_FILE_PATTERN.test(args?.command ?? "")) return true;
+  if (toolName === "bash") return true;
   return false;
 }
 

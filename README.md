@@ -37,6 +37,7 @@ Agent makes file changes (write, edit, bash)
 ```
 
 The reviewer checks for:
+
 - Bugs, logic errors, off-by-one errors
 - Security issues
 - Missing error handling
@@ -53,9 +54,9 @@ The reviewer checks for:
 
 ### Keyboard shortcuts
 
-| Key | Action |
-|-----|--------|
-| **Shift+R** | Toggle review on/off |
+| Key              | Action                    |
+| ---------------- | ------------------------- |
+| **Shift+R**      | Toggle review on/off      |
 | **Ctrl+Shift+R** | Cancel in-progress review |
 
 ### Command
@@ -67,6 +68,7 @@ The reviewer checks for:
 ## What triggers a review
 
 Only fires when file-modifying tools were used during the agent run:
+
 - `write` — new files
 - `edit` — file edits
 - `bash` — commands matching file operations (`cp`, `mv`, `rm`, `sed -i`, `cat >`, `tee`, `mkdir`, `echo >`)

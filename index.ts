@@ -46,7 +46,7 @@ export default function (pi: ExtensionAPI) {
 
   // Track tool calls + modified files across the agent run
   let agentToolCalls: Array<{ name: string; input: any; result?: string }> = [];
-  let modifiedFiles = new Set<string>();
+  const modifiedFiles = new Set<string>();
   const pendingArgs = new Map<string, { name: string; input: any }>();
 
   // ── Status bar ─────────────────────────────────────
@@ -60,7 +60,7 @@ export default function (pi: ExtensionAPI) {
     if (isReviewing) {
       ctx.ui.setStatus(
         "code-review",
-        `${star} ${theme.fg("accent", "review")} ${theme.fg("warning", "reviewing…")} ${theme.fg("dim", "(Ctrl+Shift+R to cancel)")}`
+        `${star} ${theme.fg("accent", "review")} ${theme.fg("warning", "reviewing…")} ${theme.fg("dim", "(Ctrl+Shift+R to cancel)")}`,
       );
       return;
     }
@@ -69,14 +69,14 @@ export default function (pi: ExtensionAPI) {
       const count = modifiedFiles.size;
       ctx.ui.setStatus(
         "code-review",
-        `${star} ${theme.fg("accent", "review")} ${state} ${theme.fg("muted", `· will review`)} ${theme.fg("accent", String(count))} ${theme.fg("muted", count === 1 ? "file" : "files")} ${theme.fg("dim", "(Shift+R toggle)")}`
+        `${star} ${theme.fg("accent", "review")} ${state} ${theme.fg("muted", `· will review`)} ${theme.fg("accent", String(count))} ${theme.fg("muted", count === 1 ? "file" : "files")} ${theme.fg("dim", "(Shift+R toggle)")}`,
       );
       return;
     }
 
     ctx.ui.setStatus(
       "code-review",
-      `${star} ${theme.fg("accent", "review")} ${state} ${theme.fg("dim", "(Shift+R toggle)")}`
+      `${star} ${theme.fg("accent", "review")} ${state} ${theme.fg("dim", "(Shift+R toggle)")}`,
     );
   }
 
@@ -138,7 +138,7 @@ export default function (pi: ExtensionAPI) {
     const hasFileChanges = agentToolCalls.some(
       (tc) =>
         FILE_MODIFYING_TOOLS.includes(tc.name) ||
-        (tc.name === "bash" && BASH_FILE_PATTERN.test(tc.input?.command ?? ""))
+        (tc.name === "bash" && BASH_FILE_PATTERN.test(tc.input?.command ?? "")),
     );
 
     if (!hasFileChanges) {
@@ -160,7 +160,7 @@ export default function (pi: ExtensionAPI) {
           const editSummary = edits
             .map(
               (e: any, i: number) =>
-                `  Edit ${i + 1}: replaced "${(e.oldText ?? "").slice(0, 200)}" with "${(e.newText ?? "").slice(0, 200)}"`
+                `  Edit ${i + 1}: replaced "${(e.oldText ?? "").slice(0, 200)}" with "${(e.newText ?? "").slice(0, 200)}"`,
             )
             .join("\n");
           return `EDITED file: ${tc.input?.path}\n${editSummary}`;
@@ -179,7 +179,9 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    console.log(`[code-review] File changes detected (${modifiedFiles.size} files), spawning reviewer...`);
+    console.log(
+      `[code-review] File changes detected (${modifiedFiles.size} files), spawning reviewer...`,
+    );
     isReviewing = true;
     reviewAbort = new AbortController();
     updateStatus(ctx);
@@ -197,10 +199,7 @@ export default function (pi: ExtensionAPI) {
 
       let reviewText = "";
       const unsub = reviewSession.subscribe((ev) => {
-        if (
-          ev.type === "message_update" &&
-          ev.assistantMessageEvent.type === "text_delta"
-        ) {
+        if (ev.type === "message_update" && ev.assistantMessageEvent.type === "text_delta") {
           reviewText += ev.assistantMessageEvent.delta;
         }
       });
@@ -216,16 +215,29 @@ export default function (pi: ExtensionAPI) {
             reject(new Error("Review cancelled"));
           };
 
-          if (signal.aborted) { onAbort(); return; }
+          if (signal.aborted) {
+            onAbort();
+            return;
+          }
 
           signal.addEventListener("abort", onAbort, { once: true });
 
-          reviewSession.prompt(
-            `${REVIEW_SYSTEM_PROMPT}\n\n---\n\nHere are the changes made:\n\n${changeSummary}`
-          ).then(
-            () => { settled = true; signal.removeEventListener("abort", onAbort); resolve(); },
-            (err) => { settled = true; signal.removeEventListener("abort", onAbort); reject(err); },
-          );
+          reviewSession
+            .prompt(
+              `${REVIEW_SYSTEM_PROMPT}\n\n---\n\nHere are the changes made:\n\n${changeSummary}`,
+            )
+            .then(
+              () => {
+                settled = true;
+                signal.removeEventListener("abort", onAbort);
+                resolve();
+              },
+              (err) => {
+                settled = true;
+                signal.removeEventListener("abort", onAbort);
+                reject(err);
+              },
+            );
         });
       } finally {
         unsub();
@@ -242,7 +254,7 @@ export default function (pi: ExtensionAPI) {
             content: `🔍 **Automated Code Review**\n\nA separate reviewer examined your recent changes and found potential issues:\n\n${reviewText}\n\nPlease review these findings. If any are valid, fix them. If they're false positives, briefly explain why and move on.`,
             display: true,
           },
-          { triggerTurn: true, deliverAs: "followUp" }
+          { triggerTurn: true, deliverAs: "followUp" },
         );
       }
     } catch (err: any) {
@@ -265,7 +277,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerShortcut("ctrl+shift+r", {
     description: "Cancel in-progress code review",
-    handler: async (ctx) => {
+    handler: async (_ctx) => {
       if (isReviewing && reviewAbort) {
         reviewAbort.abort();
       }
@@ -278,10 +290,7 @@ export default function (pi: ExtensionAPI) {
     description: "Toggle automatic code review",
     handler: async (ctx) => {
       reviewEnabled = !reviewEnabled;
-      ctx.ui.notify(
-        `Code review: ${reviewEnabled ? "enabled ★" : "disabled ☆"}`,
-        "info"
-      );
+      ctx.ui.notify(`Code review: ${reviewEnabled ? "enabled ★" : "disabled ☆"}`, "info");
       updateStatus(ctx);
     },
   });
@@ -292,10 +301,7 @@ export default function (pi: ExtensionAPI) {
     description: "Toggle automatic code review",
     handler: async (_args, ctx) => {
       reviewEnabled = !reviewEnabled;
-      ctx.ui.notify(
-        `Code review: ${reviewEnabled ? "enabled ★" : "disabled ☆"}`,
-        "info"
-      );
+      ctx.ui.notify(`Code review: ${reviewEnabled ? "enabled ★" : "disabled ☆"}`, "info");
       updateStatus(ctx);
     },
   });

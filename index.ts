@@ -11,8 +11,8 @@
  *
  * UX:
  *   - Status bar shows auto-review on/off + pending file count
- *   - Shift+R toggles review on/off
- *   - Ctrl+Shift+R cancels an in-progress review
+ *   - Alt+R toggles review on/off
+ *   - Ctrl+Alt+R cancels an in-progress review
  *   - /review command toggles, /review <N> reviews last N commits
  *
  * Install:
@@ -222,7 +222,7 @@ export default function (pi: ExtensionAPI) {
       const activityInfo = activity ? ` ${theme.fg("muted", activity)}` : "";
       ctx.ui.setStatus(
         "code-review",
-        `${label} ${theme.fg("warning", "reviewing…")} ${loopInfo}${activityInfo} ${theme.fg("dim", "(Ctrl+Shift+R to cancel)")}`,
+        `${label} ${theme.fg("warning", "reviewing…")} ${loopInfo}${activityInfo} ${theme.fg("dim", "(Ctrl+Alt+R to cancel)")}`,
       );
       return;
     }
@@ -232,12 +232,12 @@ export default function (pi: ExtensionAPI) {
       const verb = reviewEnabled ? theme.fg("muted", "will review") : theme.fg("muted", "pending");
       ctx.ui.setStatus(
         "code-review",
-        `${label} ${state} · ${verb} ${theme.fg("accent", String(count))} ${theme.fg("muted", count === 1 ? "file" : "files")} ${theme.fg("dim", "(Shift+R toggle)")}`,
+        `${label} ${state} · ${verb} ${theme.fg("accent", String(count))} ${theme.fg("muted", count === 1 ? "file" : "files")} ${theme.fg("dim", "(Alt+R toggle)")}`,
       );
       return;
     }
 
-    ctx.ui.setStatus("code-review", `${label} ${state} ${theme.fg("dim", "(Shift+R toggle)")}`);
+    ctx.ui.setStatus("code-review", `${label} ${state} ${theme.fg("dim", "(Alt+R toggle)")}`);
   }
 
   let isToggling = false;
@@ -503,14 +503,14 @@ export default function (pi: ExtensionAPI) {
 
   // ── Shortcuts ──────────────────────────────────────
 
-  pi.registerShortcut("ctrl+shift+r", {
+  pi.registerShortcut("ctrl+alt+r", {
     description: "Cancel in-progress code review",
     handler: async (_ctx) => {
       if (isReviewing && reviewAbort) reviewAbort.abort();
     },
   });
 
-  pi.registerShortcut("shift+r", {
+  pi.registerShortcut("alt+r", {
     description: "Toggle automatic code review",
     handler: async (ctx) => toggleReview(ctx),
   });

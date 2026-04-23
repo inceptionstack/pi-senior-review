@@ -99,17 +99,17 @@ If files are missing, defaults are used silently. If files are malformed, a clea
 
 ### Status bar (bottom of pi)
 
-- `auto-review on (Shift+R toggle)` — idle, no pending files
-- `auto-review on · will review 3 files (Shift+R toggle)` — edits accumulating
-- `auto-review reviewing… [2/100] (Ctrl+Shift+R to cancel)` — reviewer running
-- `auto-review off (Shift+R toggle)` — disabled
+- `auto-review on (Alt+R toggle)` — idle, no pending files
+- `auto-review on · will review 3 files (Alt+R toggle)` — edits accumulating
+- `auto-review reviewing… [2/100] (Ctrl+Alt+R to cancel)` — reviewer running
+- `auto-review off (Alt+R toggle)` — disabled
 
 ### Keyboard shortcuts
 
 | Key              | Action                                          |
 | ---------------- | ----------------------------------------------- |
-| **Shift+R**      | Toggle auto-review on/off (resets loop counter) |
-| **Ctrl+Shift+R** | Cancel in-progress review                       |
+| **Alt+R**      | Toggle auto-review on/off (resets loop counter) |
+| **Ctrl+Alt+R** | Cancel in-progress review                       |
 
 ### Command
 
@@ -123,7 +123,7 @@ If files are missing, defaults are used silently. If files are malformed, a clea
 2. If issues found → agent fixes them → review triggers again
 3. If LGTM → loop counter resets
 4. If loop count reaches `maxReviewLoops` → stops with a warning
-5. Toggling off/on with Shift+R or `/review` resets the counter
+5. Toggling off/on with Alt+R or `/review` resets the counter
 
 ### Roundup review
 

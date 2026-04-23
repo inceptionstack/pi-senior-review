@@ -519,6 +519,18 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
+    // Skip review if no real file paths were modified
+    // (bash-only turns like cat/tail/ls shouldn't trigger review)
+    const realFiles = new Set([
+      ...[...modifiedFiles].filter(f => f !== "(bash file op)"),
+      ...collectModifiedPaths(agentToolCalls),
+    ]);
+    if (realFiles.size === 0) {
+      log("skipping review: no real file paths found");
+      resetTrackingState(ctx);
+      return;
+    }
+
     reviewLoopCount++;
     isReviewing = true;
     reviewAbort = new AbortController();

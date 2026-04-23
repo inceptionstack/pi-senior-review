@@ -450,7 +450,6 @@ export default function (pi: ExtensionAPI) {
 
         // Gated roundup: heuristics → judge → full roundup
         if (settings.roundupEnabled && !roundupDone) {
-          roundupDone = true;
           const heuristic = checkRoundupHeuristics({
             changedFiles: [...sessionChangedFiles],
             peakLoopCount: peakReviewLoopCount,
@@ -458,6 +457,7 @@ export default function (pi: ExtensionAPI) {
           });
 
           if (heuristic === "maybe") {
+            roundupDone = true;
             updateStatus(ctx, "roundup judge…");
             const judge = await runRoundupJudge({
               signal: reviewAbort!.signal,
@@ -495,8 +495,10 @@ export default function (pi: ExtensionAPI) {
               }
             } else {
               log(`roundup: skipped by judge — ${judge.reason}`);
+              roundupDone = false;
             }
           }
+          // heuristic === "skip": roundupDone stays false, will re-evaluate next LGTM
         }
       } else {
         peakReviewLoopCount = Math.max(peakReviewLoopCount, reviewLoopCount);

@@ -288,7 +288,10 @@ export async function getBestReviewContent(
             `\n\n... (truncated, ${content.length} total chars)`;
         }
         const newLabel = untrackedFiles.has(file) ? " (new file)" : "";
-        fileSections.push(`### ${file}${newLabel}\n\`\`\`\n${content}\n\`\`\``); to filtered files only (use correct range)
+        fileSections.push(`### ${file}${newLabel}\n\`\`\`\n${content}\n\`\`\``);
+      }
+
+      // Re-run diff scoped to filtered files only (use correct range)
       let scopedDiff = diff;
       if (ignorePatterns && filteredFiles.length < files.length) {
         const scopedArgs = commitLabel

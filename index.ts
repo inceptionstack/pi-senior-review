@@ -84,7 +84,7 @@ export default function (pi: ExtensionAPI) {
       filesReviewed,
       onActivity,
     };
-  }──
+  }
 
   function resetTrackingState(ctx: { ui: any; hasUI?: boolean }) {
     agentToolCalls = [];

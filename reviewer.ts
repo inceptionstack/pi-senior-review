@@ -328,9 +328,11 @@ export async function runReviewSession(prompt: string, opts: ReviewOptions): Pro
         `if you found issues. Do not repeat the review, just output the verdict tag.`;
       try {
         await sendPrompt(followUp, RETRY_TIMEOUT_MS);
-      } catch {
-        // Retry failure: keep reviewText (already set to main prompt text) and break
-        log(`reviewer: retry ${retries} failed, using current reviewText`);
+      } catch (err: any) {
+        // Propagate cancellation — don't silently swallow user intent
+        if (err?.message === "Review cancelled") throw err;
+        // Other retry failures: keep reviewText (from main prompt) and fall back to default verdict
+        log(`reviewer: retry ${retries} failed (${err?.message ?? err}), using current reviewText`);
         break;
       }
       verdict = parseVerdict(currentText);

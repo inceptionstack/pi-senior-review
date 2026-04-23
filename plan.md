@@ -2,6 +2,17 @@
 
 ## Date: 2026-04-23
 
+## Open Issues
+
+### B2. Ctrl+Alt+R does NOT cancel an in-progress review
+**Problem:** Pressing Ctrl+Alt+R while the status bar says "reviewing…" does nothing. `reviewAbort.abort()` fires per the log, but the review session doesn't respond to the AbortSignal and keeps running until its own timeout.
+**Suspected causes:**
+- The shortcut handler may not be dispatched while pi is streaming an assistant message from the previous turn (TUI input layer blocked).
+- OR: `session.abort()` inside `onAbort` isn't actually stopping the LLM stream — needs investigation into pi-coding-agent SDK abort propagation.
+- OR: The outer `opts.signal` ties to the main agent's abort, not the review's own lifecycle. Need a dedicated review AbortController that can be fired independently of the outer pi signal.
+**Priority:** HIGH — users can't escape a stuck review except Ctrl+Alt+Shift+R full reset.
+**Status:** [ ]
+
 ## Critical Bugs
 
 ### B1. Untracked (new) files invisible to reviewer

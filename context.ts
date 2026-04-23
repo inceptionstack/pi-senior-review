@@ -22,7 +22,6 @@ const MAX_TOTAL_CONTENT_SIZE = 60_000;
 
 /**
  * Build full review context from the current working directory.
- * Returns diff, changed file list, their full contents, and project file tree.
  */
 export async function buildReviewContext(
   pi: ExtensionAPI,
@@ -36,13 +35,11 @@ export async function buildReviewContext(
 
   if (!diff) return null;
 
-  // Get list of changed files
   onStatus?.("listing changed files…");
   const changedResult = await pi.exec("git", ["diff", "HEAD", "--name-only"], { timeout: 5000 });
   let changedFiles =
     changedResult.code === 0 ? changedResult.stdout.trim().split("\n").filter(Boolean) : [];
 
-  // Apply ignore patterns
   if (ignorePatterns && ignorePatterns.length > 0) {
     const before = changedFiles.length;
     changedFiles = filterIgnored(changedFiles, ignorePatterns);
@@ -53,7 +50,6 @@ export async function buildReviewContext(
 
   if (changedFiles.length === 0) return null;
 
-  // Re-get diff for only non-ignored files if we filtered any out
   if (ignorePatterns && ignorePatterns.length > 0) {
     const filteredDiffResult = await pi.exec("git", ["diff", "HEAD", "--", ...changedFiles], {
       timeout: 15000,
@@ -63,7 +59,6 @@ export async function buildReviewContext(
     }
   }
 
-  // Read full contents of each changed file, respecting total size cap
   const fileContents = new Map<string, string>();
   let totalContentSize = 0;
 
@@ -75,7 +70,6 @@ export async function buildReviewContext(
 
     onStatus?.(`reading ${file}…`);
     try {
-      // Read working tree version directly
       const readResult = await pi.exec("head", ["-c", String(MAX_FILE_SIZE + 100), file], {
         timeout: 5000,
       });
@@ -86,7 +80,7 @@ export async function buildReviewContext(
       }
 
       let content = readResult.stdout;
-      totalContentSize += content.length; // count pre-truncation size
+      totalContentSize += content.length;
 
       if (content.length > MAX_FILE_SIZE) {
         content =
@@ -99,7 +93,6 @@ export async function buildReviewContext(
     }
   }
 
-  // Get project file tree (shallow)
   onStatus?.("scanning file tree…");
   const treeResult = await pi.exec(
     "find",
@@ -130,31 +123,31 @@ export async function buildReviewContext(
 export function formatReviewContext(ctx: ReviewContext): string {
   const parts: string[] = [];
 
-  // Changed files summary
   parts.push(`## Changed files (${ctx.changedFiles.length})\n`);
   for (const f of ctx.changedFiles) {
     parts.push(`- ${f}`);
   }
 
-  // Full file contents
   parts.push(`\n## Full file contents\n`);
   for (const [file, content] of ctx.fileContents) {
     parts.push(`### ${file}\n\`\`\`\n${content}\n\`\`\`\n`);
   }
 
-  // Git diff
   parts.push(`## Git diff\n\`\`\`diff\n${truncateDiff(ctx.diff, 30000)}\n\`\`\`\n`);
-
-  // File tree
   parts.push(`## Project file tree (depth 3)\n\`\`\`\n${ctx.fileTree.slice(0, 5000)}\n\`\`\`\n`);
 
   return parts.join("\n");
 }
 
+export interface ReviewContent {
+  content: string;
+  label: string;
+  files: string[];
+}
+
 /**
  * Get the best available review content.
  * Tries: git diff from detected repos → git diff from cwd → tool call summaries.
- * Returns the context string for the reviewer prompt, or null if nothing to review.
  */
 export async function getBestReviewContent(
   pi: ExtensionAPI,
@@ -162,12 +155,16 @@ export async function getBestReviewContent(
   onStatus?: (msg: string) => void,
   ignorePatterns?: string[],
   gitRoots?: Set<string>,
-): Promise<{ content: string; label: string } | null> {
-  // 1. Try each known git root for uncommitted changes
+): Promise<ReviewContent | null> {
+  // 1. Try each known git root
   if (gitRoots && gitRoots.size > 0) {
     const allContexts: string[] = [];
+    const allFiles: string[] = [];
+
     for (const root of gitRoots) {
       onStatus?.(`checking ${root}…`);
+
+      // Try uncommitted changes
       const result = await pi.exec("git", ["-C", root, "diff", "HEAD"], { timeout: 15000 });
       if (result.code === 0 && result.stdout.trim()) {
         const diff = truncateDiff(result.stdout.trim(), 15000);
@@ -177,34 +174,53 @@ export async function getBestReviewContent(
         const files =
           nameResult.code === 0 ? nameResult.stdout.trim().split("\n").filter(Boolean) : [];
         const filteredFiles = ignorePatterns ? filterIgnored(files, ignorePatterns) : files;
+        allFiles.push(...filteredFiles.map((f) => `${root}/${f}`));
         allContexts.push(
           `## Repo: ${root}\n\nChanged files: ${filteredFiles.join(", ")}\n\n\`\`\`diff\n${diff}\n\`\`\``,
         );
-      } else {
-        // Try last commit in this repo
-        const lastResult = await pi.exec("git", ["-C", root, "diff", "HEAD~1", "HEAD"], {
-          timeout: 15000,
+        continue;
+      }
+
+      // Try last commit
+      const lastResult = await pi.exec("git", ["-C", root, "diff", "HEAD~1", "HEAD"], {
+        timeout: 15000,
+      });
+      if (lastResult.code === 0 && lastResult.stdout.trim()) {
+        const diff = truncateDiff(lastResult.stdout.trim(), 15000);
+        const logResult = await pi.exec("git", ["-C", root, "log", "--oneline", "-1"], {
+          timeout: 5000,
         });
-        if (lastResult.code === 0 && lastResult.stdout.trim()) {
-          const diff = truncateDiff(lastResult.stdout.trim(), 15000);
-          const logResult = await pi.exec("git", ["-C", root, "log", "--oneline", "-1"], {
-            timeout: 5000,
-          });
-          allContexts.push(
-            `## Repo: ${root} (last commit: ${logResult.stdout.trim()})\n\n\`\`\`diff\n${diff}\n\`\`\``,
-          );
-        }
+        const nameResult = await pi.exec(
+          "git",
+          ["-C", root, "diff", "HEAD~1", "HEAD", "--name-only"],
+          { timeout: 5000 },
+        );
+        const files =
+          nameResult.code === 0 ? nameResult.stdout.trim().split("\n").filter(Boolean) : [];
+        allFiles.push(...files.map((f) => `${root}/${f}`));
+        allContexts.push(
+          `## Repo: ${root} (last commit: ${logResult.stdout.trim()})\n\n\`\`\`diff\n${diff}\n\`\`\``,
+        );
       }
     }
+
     if (allContexts.length > 0) {
-      return { content: allContexts.join("\n\n---\n\n"), label: `${allContexts.length} repo(s)` };
+      return {
+        content: allContexts.join("\n\n---\n\n"),
+        label: `${allContexts.length} repo(s)`,
+        files: allFiles,
+      };
     }
   }
 
-  // 2. Fallback: try cwd as git repo (original behavior)
+  // 2. Fallback: try cwd as git repo
   const reviewContext = await buildReviewContext(pi, onStatus, ignorePatterns);
   if (reviewContext) {
-    return { content: formatReviewContext(reviewContext), label: "" };
+    return {
+      content: formatReviewContext(reviewContext),
+      label: "",
+      files: reviewContext.changedFiles,
+    };
   }
 
   // 3. Try last commit from cwd
@@ -216,18 +232,29 @@ export async function getBestReviewContent(
       const commitLog = (
         await pi.exec("git", ["log", "--oneline", "-1"], { timeout: 5000 })
       ).stdout.trim();
+      const nameResult = await pi.exec("git", ["diff", "HEAD~1", "HEAD", "--name-only"], {
+        timeout: 5000,
+      });
+      const files =
+        nameResult.code === 0 ? nameResult.stdout.trim().split("\n").filter(Boolean) : [];
       return {
         content: `## Last commit\n${commitLog}\n\n## Diff\n\`\`\`diff\n${truncated}\n\`\`\``,
         label: "last commit",
+        files,
       };
     }
-  } catch { /* git not available */ }
+  } catch {
+    /* git not available */
+  }
 
   // 4. Fall back to tool call summaries (no git)
   if (agentToolCalls.length > 0) {
     const summary = buildChangeSummary(agentToolCalls);
     if (summary.trim()) {
-      return { content: summary, label: "tracked changes" };
+      const trackedFiles = agentToolCalls
+        .filter((t) => t.input?.path)
+        .map((t) => t.input.path as string);
+      return { content: summary, label: "tracked changes", files: trackedFiles };
     }
   }
 

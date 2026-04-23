@@ -300,7 +300,7 @@ export default function (pi: ExtensionAPI) {
                   onActivity: (desc) => updateStatus(ctx, desc),
                 });
                 if (result.isLgtm) reviewLoopCount = 0;
-                sendReviewResult(pi, result, best.label);
+                sendReviewResult(pi, result, best.label, { reviewedFiles: best.files });
               } else {
                 ctx.ui.notify("No changes found to review.", "info");
               }
@@ -458,7 +458,7 @@ export default function (pi: ExtensionAPI) {
         if (peakReviewLoopCount > 1 && !roundupDone) {
           roundupDone = true;
           reviewLoopCount = 0;
-          sendReviewResult(pi, result, "");
+          sendReviewResult(pi, result, "", { reviewedFiles: best.files });
 
           // Run roundup
           updateStatus(ctx, "roundup review…");
@@ -480,12 +480,13 @@ export default function (pi: ExtensionAPI) {
           }
         } else {
           reviewLoopCount = 0;
-          sendReviewResult(pi, result, "");
+          sendReviewResult(pi, result, "", { reviewedFiles: best.files });
         }
       } else {
         peakReviewLoopCount = Math.max(peakReviewLoopCount, reviewLoopCount);
         sendReviewResult(pi, result, "", {
           showLoopCount: `loop ${reviewLoopCount}/${settings.maxReviewLoops}`,
+          reviewedFiles: best.files,
         });
       }
     } catch (err: any) {

@@ -142,18 +142,31 @@ export async function runReviewSession(prompt: string, opts: ReviewOptions): Pro
 /**
  * Send the appropriate review result message (LGTM or issues found).
  */
+/**
+ * Format file paths as a compact tree.
+ */
+function formatFileTree(files: string[]): string {
+  if (files.length === 0) return "";
+  const sorted = [...files].sort();
+  return sorted.map((f) => `  ${f}`).join("\n");
+}
+
 export function sendReviewResult(
   pi: ExtensionAPI,
   result: ReviewResult,
   label: string,
-  opts?: { showLoopCount?: string },
+  opts?: { showLoopCount?: string; reviewedFiles?: string[] },
 ): void {
   if (result.isLgtm) {
     console.log("[auto-review] Reviewer says: LGTM");
+    const fileList =
+      opts?.reviewedFiles && opts.reviewedFiles.length > 0
+        ? `\n\n**Reviewed files:**\n\`\`\`\n${formatFileTree(opts.reviewedFiles)}\n\`\`\``
+        : "";
     pi.sendMessage(
       {
         customType: "code-review",
-        content: `✅ **Automated Code Review**${label ? ` (${label})` : ""}\n\nReview found no issues. Looks good!\n\nIf you were waiting to push until after reviews were done — all reviews are done, no issues found. Safe to push.`,
+        content: `✅ **Automated Code Review**${label ? ` (${label})` : ""}\n\nReview found no issues. Looks good!${fileList}\n\nIf you were waiting to push until after reviews were done — all reviews are done, no issues found. Safe to push.`,
         display: true,
       },
       { triggerTurn: true, deliverAs: "followUp" },

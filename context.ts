@@ -50,18 +50,18 @@ export async function buildReviewContext(
 
     onStatus?.(`reading ${file}…`);
     try {
-      // Use git show for working tree version via git diff piped content,
-      // or just read the file directly via the read-friendly approach
-      const readResult = await pi.exec("git", ["show", `:${file}`], { timeout: 5000 });
-      let content: string;
+      // Read working tree version directly
+      const readResult = await pi.exec("head", ["-c", String(MAX_FILE_SIZE + 100), file], {
+        timeout: 5000,
+      });
 
-      if (readResult.code === 0 && readResult.stdout) {
-        content = readResult.stdout;
-      } else {
-        // Fallback: read working tree version
-        const wtResult = await pi.exec("git", ["diff", "HEAD", "--", file], { timeout: 5000 });
-        content = wtResult.stdout || "(could not read file)";
+      if (readResult.code !== 0 || !readResult.stdout) {
+        fileContents.set(file, "(could not read — file may be deleted)");
+        continue;
       }
+
+      let content = readResult.stdout;
+      totalContentSize += content.length; // count pre-truncation size
 
       if (content.length > MAX_FILE_SIZE) {
         content =
@@ -69,7 +69,6 @@ export async function buildReviewContext(
       }
 
       fileContents.set(file, content);
-      totalContentSize += content.length;
     } catch {
       fileContents.set(file, "(could not read — file may be deleted)");
     }

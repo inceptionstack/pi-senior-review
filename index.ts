@@ -43,7 +43,7 @@ const DEFAULT_REVIEW_PROMPT = `You are a senior code reviewer. You will be given
 - The git diff of the changes
 - The project file tree
 
-You also have read-only tools available (read, grep, find, ls) to explore the codebase further. Use them if you need more context — for example to check if tests exist for a module, to read related files, or to understand how a function is used elsewhere.
+You also have read-only tools available (read, grep, find, ls) to explore the codebase further. Use them if you need more context — for example to check if tests exist for a module, to read related files, or to understand how a function is used elsewhere. You do NOT have write or edit tools — you are reviewing only, not modifying.
 
 Review the changes for the following:
 

@@ -31,6 +31,8 @@ import {
   ModelRegistry,
 } from "@mariozechner/pi-coding-agent";
 
+import { clampCommitCount, shouldDiffAllCommits, truncateDiff } from "./helpers";
+
 // ── Default review prompt ────────────────────────────
 
 const DEFAULT_REVIEW_PROMPT = `You are a senior code reviewer. You will be given a description of changes that were just made to a codebase. Review them for the following:
@@ -470,7 +472,7 @@ export default function (pi: ExtensionAPI) {
           return;
         }
 
-        ctx.ui.notify(`Reviewing last ${count} commit${count > 1 ? "s" : ""}…`, "info");
+        ctx.ui.notify(`Reviewing commits…`, "info");
         isReviewing = true;
         reviewAbort = new AbortController();
         updateStatus(ctx);
@@ -480,6 +482,11 @@ export default function (pi: ExtensionAPI) {
           const countResult = await pi.exec("git", ["rev-list", "--count", "HEAD"], {
             timeout: 5000,
           });
+
+          if (countResult.code !== 0) {
+            console.log(`[auto-review] git rev-list failed: ${countResult.stderr.trim()}`);
+          }
+
           const totalCommits = parseInt(countResult.stdout.trim(), 10) || 0;
 
           if (totalCommits === 0) {
@@ -487,19 +494,27 @@ export default function (pi: ExtensionAPI) {
             return;
           }
 
-          const effectiveCount = Math.min(count, totalCommits);
-          if (effectiveCount < count) {
+          const { effectiveCount, wasClamped } = clampCommitCount(count, totalCommits);
+          if (wasClamped) {
             ctx.ui.notify(
               `Repo has ${totalCommits} commit${totalCommits > 1 ? "s" : ""}. Reviewing all.`,
               "info",
             );
           }
 
-          // Use --root-compatible diff: for all commits, diff against empty tree
-          const diffArgs =
-            effectiveCount >= totalCommits
-              ? ["diff", "4b825dc642cb6eb9a060e54bf899d69f7cb0cb10", "HEAD"]
-              : ["diff", `HEAD~${effectiveCount}`, "HEAD"];
+          // Compute empty tree hash dynamically (works with SHA-1 and SHA-256 repos)
+          const diffArgs: string[] = [];
+          if (shouldDiffAllCommits(effectiveCount, totalCommits)) {
+            const emptyTreeResult = await pi.exec(
+              "git",
+              ["hash-object", "-t", "tree", "/dev/null"],
+              { timeout: 5000 },
+            );
+            const emptyTree = emptyTreeResult.stdout.trim();
+            diffArgs.push("diff", emptyTree, "HEAD");
+          } else {
+            diffArgs.push("diff", `HEAD~${effectiveCount}`, "HEAD");
+          }
 
           const diffResult = await pi.exec("git", diffArgs, {
             timeout: 15000,
@@ -515,7 +530,7 @@ export default function (pi: ExtensionAPI) {
 
           const diff = diffResult.stdout.trim();
           if (!diff) {
-            ctx.ui.notify("No changes found in the last " + count + " commit(s).", "info");
+            ctx.ui.notify("No changes found in the last " + effectiveCount + " commit(s).", "info");
             return;
           }
 
@@ -526,12 +541,7 @@ export default function (pi: ExtensionAPI) {
           const commitLog = logResult.stdout.trim();
 
           // Truncate diff if too large
-          const maxDiffLen = 30000;
-          const truncatedDiff =
-            diff.length > maxDiffLen
-              ? diff.slice(0, maxDiffLen) +
-                `\n\n... (diff truncated, ${diff.length - maxDiffLen} chars omitted)`
-              : diff;
+          const truncatedDiff = truncateDiff(diff, 30000);
 
           const reviewPrompt = buildReviewPrompt();
           const prompt = `${reviewPrompt}\n\n---\n\nReview the following git diff (last ${effectiveCount} commit${effectiveCount > 1 ? "s" : ""}):\n\nCommits:\n${commitLog}\n\nDiff:\n\`\`\`diff\n${truncatedDiff}\n\`\`\``;

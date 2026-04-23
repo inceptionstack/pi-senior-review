@@ -40,6 +40,7 @@ import {
   hasFileChanges,
   isFileModifyingTool,
   collectModifiedPaths,
+  isFormattingOnlyTurn,
 } from "./changes";
 import { getBestReviewContent } from "./context";
 import { loadIgnorePatterns, filterIgnored } from "./ignore";
@@ -403,6 +404,14 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (!hasFileChanges(agentToolCalls)) {
+      resetTrackingState(ctx);
+      return;
+    }
+
+    // Skip review if the turn only ran formatters/linters
+    // (prettier, eslint --fix, black, gofmt, etc. — cosmetic changes only)
+    if (isFormattingOnlyTurn(agentToolCalls)) {
+      log("skipping review: formatting/linting only");
       resetTrackingState(ctx);
       return;
     }

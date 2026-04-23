@@ -123,6 +123,95 @@ const NON_MODIFYING_COMMAND_ROOTS = new Set([
 const ALLOWED_NAVIGATION = /^(cd|export|pwd|exit|return|true|false)\b/;
 
 /**
+ * Patterns matching formatter/linter commands across languages.
+ * These modify files but only cosmetically — not worth reviewing.
+ */
+const FORMATTER_PATTERNS: RegExp[] = [
+  // JavaScript / TypeScript
+  /\bprettier\b/,
+  /\beslint\b.*--fix/,
+  /\bbiome\b.*(?:format|check.*--fix|lint.*--fix)/,
+  /\bdprint\b.*fmt/,
+  // Python
+  /\bblack\b/,
+  /\bruff\b.*(?:format|check.*--fix)/,
+  /\bisort\b/,
+  /\bautopep8\b/,
+  /\byapf\b/,
+  // Go
+  /\bgofmt\b/,
+  /\bgoimports\b/,
+  /\bgolangci-lint\b.*--fix/,
+  // Rust
+  /\brustfmt\b/,
+  /\bcargo\s+fmt\b/,
+  /\bcargo\s+clippy\b.*--fix/,
+  // C / C++
+  /\bclang-format\b/,
+  // Java / Kotlin
+  /\bgoogle-java-format\b/,
+  /\bktlint\b.*--format/,
+  /\bktfmt\b/,
+  // Ruby
+  /\brubocop\b.*-[aA]/,
+  /\brubocop\b.*--auto-correct/,
+  // PHP
+  /\bphp-cs-fixer\b/,
+  /\bphpcbf\b/,
+  // Swift
+  /\bswiftformat\b/,
+  // Dart
+  /\bdart\s+format\b/,
+  // General
+  /\beditorconfig-checker\b/,
+  // npm/npx wrappers
+  /\bnpx\s+prettier\b/,
+  /\bnpx\s+eslint\b.*--fix/,
+  /\bnpm\s+run\s+(format|lint:fix|fix)\b/,
+  /\byarn\s+(format|lint:fix|fix)\b/,
+  /\bpnpm\s+(format|lint:fix|fix)\b/,
+  /\bbun\s+run\s+(format|lint:fix|fix)\b/,
+];
+
+/**
+ * Check if a bash command is a code formatter or linter auto-fix.
+ * These modify files but only cosmetically (whitespace, ordering, style).
+ */
+export function isFormatterCommand(command: string): boolean {
+  if (!command) return false;
+  return FORMATTER_PATTERNS.some((p) => p.test(command));
+}
+
+/**
+ * Check if an entire turn's tool calls are ONLY formatting/linting operations.
+ * Returns true if every file-modifying action is a known formatter command.
+ * Returns false if there are no tool calls, or any non-formatter modifications.
+ */
+export function isFormattingOnlyTurn(toolCalls: TrackedToolCall[]): boolean {
+  if (toolCalls.length === 0) return false;
+
+  let hasFormatterCall = false;
+
+  for (const tc of toolCalls) {
+    // write/edit tool calls are real modifications, not formatting
+    if (FILE_MODIFYING_TOOLS.includes(tc.name)) return false;
+
+    if (tc.name === "bash") {
+      const cmd = tc.input?.command ?? "";
+      if (isNonFileModifyingCommand(cmd)) continue; // skip non-modifying (git, curl, etc.)
+      if (isFormatterCommand(cmd)) {
+        hasFormatterCall = true;
+        continue;
+      }
+      // Unknown bash command that could modify files → not formatting-only
+      return false;
+    }
+  }
+
+  return hasFormatterCall;
+}
+
+/**
  * Check if a bash command part is a known non-file-modifying command.
  */
 function isNonModifyingPart(part: string): boolean {

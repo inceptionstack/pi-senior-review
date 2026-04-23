@@ -8,6 +8,8 @@ import {
   collectModifiedPaths,
   isPureGitOperation,
   isNonFileModifyingCommand,
+  isFormatterCommand,
+  isFormattingOnlyTurn,
 } from "../changes";
 
 describe("hasFileChanges", () => {
@@ -323,5 +325,120 @@ describe("hasFileChanges_withAwsCurl", () => {
         { name: "edit", input: { path: "foo.ts" } },
       ]),
     ).toBe(true);
+  });
+});
+
+describe("isFormatterCommand", () => {
+  // JavaScript / TypeScript
+  it("prettier", () => expect(isFormatterCommand("prettier --write .")).toBe(true));
+  it("npx prettier", () => expect(isFormatterCommand("npx prettier --write src/")).toBe(true));
+  it("eslint --fix", () => expect(isFormatterCommand("eslint . --fix")).toBe(true));
+  it("eslint without fix", () => expect(isFormatterCommand("eslint .")).toBe(false));
+  it("biome format", () => expect(isFormatterCommand("biome format .")).toBe(true));
+  it("biome check --fix", () => expect(isFormatterCommand("biome check --fix")).toBe(true));
+  it("npm run format", () => expect(isFormatterCommand("npm run format")).toBe(true));
+  it("npm run lint:fix", () => expect(isFormatterCommand("npm run lint:fix")).toBe(true));
+  it("yarn fix", () => expect(isFormatterCommand("yarn fix")).toBe(true));
+  it("pnpm format", () => expect(isFormatterCommand("pnpm format")).toBe(true));
+
+  // Python
+  it("black", () => expect(isFormatterCommand("black src/")).toBe(true));
+  it("ruff format", () => expect(isFormatterCommand("ruff format .")).toBe(true));
+  it("ruff check --fix", () => expect(isFormatterCommand("ruff check --fix")).toBe(true));
+  it("isort", () => expect(isFormatterCommand("isort .")).toBe(true));
+  it("autopep8", () => expect(isFormatterCommand("autopep8 --in-place file.py")).toBe(true));
+
+  // Go
+  it("gofmt", () => expect(isFormatterCommand("gofmt -w .")).toBe(true));
+  it("goimports", () => expect(isFormatterCommand("goimports -w .")).toBe(true));
+
+  // Rust
+  it("rustfmt", () => expect(isFormatterCommand("rustfmt src/main.rs")).toBe(true));
+  it("cargo fmt", () => expect(isFormatterCommand("cargo fmt")).toBe(true));
+  it("cargo clippy --fix", () => expect(isFormatterCommand("cargo clippy --fix")).toBe(true));
+
+  // C / C++
+  it("clang-format", () => expect(isFormatterCommand("clang-format -i src/*.c")).toBe(true));
+
+  // Java
+  it("google-java-format", () =>
+    expect(isFormatterCommand("google-java-format -i Foo.java")).toBe(true));
+
+  // Ruby
+  it("rubocop -a", () => expect(isFormatterCommand("rubocop -a")).toBe(true));
+  it("rubocop --auto-correct", () =>
+    expect(isFormatterCommand("rubocop --auto-correct")).toBe(true));
+
+  // Non-formatters
+  it("node script", () => expect(isFormatterCommand("node build.js")).toBe(false));
+  it("rm file", () => expect(isFormatterCommand("rm -rf dist")).toBe(false));
+  it("empty", () => expect(isFormatterCommand("")).toBe(false));
+  it("tsc", () => expect(isFormatterCommand("tsc --noEmit")).toBe(false));
+});
+
+describe("isFormattingOnlyTurn", () => {
+  it("true when all bash calls are formatters", () => {
+    expect(
+      isFormattingOnlyTurn([
+        { name: "bash", input: { command: "prettier --write ." } },
+        { name: "bash", input: { command: "eslint . --fix" } },
+      ]),
+    ).toBe(true);
+  });
+
+  it("true when mix of formatters and non-modifying commands", () => {
+    expect(
+      isFormattingOnlyTurn([
+        { name: "bash", input: { command: "prettier --write ." } },
+        { name: "bash", input: { command: "git add -A" } },
+        { name: "bash", input: { command: "git status" } },
+      ]),
+    ).toBe(true);
+  });
+
+  it("false when write tool is used", () => {
+    expect(
+      isFormattingOnlyTurn([
+        { name: "bash", input: { command: "prettier --write ." } },
+        { name: "write", input: { path: "foo.ts" } },
+      ]),
+    ).toBe(false);
+  });
+
+  it("false when edit tool is used", () => {
+    expect(
+      isFormattingOnlyTurn([
+        { name: "bash", input: { command: "npm run format" } },
+        { name: "edit", input: { path: "foo.ts" } },
+      ]),
+    ).toBe(false);
+  });
+
+  it("false when unknown bash command present", () => {
+    expect(
+      isFormattingOnlyTurn([
+        { name: "bash", input: { command: "prettier --write ." } },
+        { name: "bash", input: { command: "node build.js" } },
+      ]),
+    ).toBe(false);
+  });
+
+  it("false when empty", () => {
+    expect(isFormattingOnlyTurn([])).toBe(false);
+  });
+
+  it("false when only non-modifying commands (no formatter)", () => {
+    expect(
+      isFormattingOnlyTurn([
+        { name: "bash", input: { command: "git status" } },
+        { name: "bash", input: { command: "ls -la" } },
+      ]),
+    ).toBe(false);
+  });
+
+  it("true with npm run format only", () => {
+    expect(isFormattingOnlyTurn([{ name: "bash", input: { command: "npm run format" } }])).toBe(
+      true,
+    );
   });
 });

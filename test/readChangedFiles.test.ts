@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readChangedFiles } from "../context";
+import { readChangedFiles, FALLBACK_LIMITS } from "../context";
 
 function makeMockPi(
   execHandler: (cmd: string, args: string[]) => { code: number; stdout: string },
@@ -68,7 +68,7 @@ describe("readChangedFiles", () => {
   it("readChangedFiles_LargeFile_Truncated", async () => {
     const bigContent = "x".repeat(15000);
     const pi = makeMockPi(() => ({ code: 0, stdout: bigContent }));
-    const result = await readChangedFiles(pi, ["huge.ts"]);
+    const result = await readChangedFiles(pi, ["huge.ts"], { limits: FALLBACK_LIMITS });
     expect(result.sections[0]).toContain("truncated");
     const stored = result.contents.get("huge.ts")!;
     expect(stored.length).toBeLessThan(bigContent.length);
@@ -78,7 +78,7 @@ describe("readChangedFiles", () => {
     const big = "x".repeat(10000);
     const pi = makeMockPi(() => ({ code: 0, stdout: big }));
     const files = Array.from({ length: 10 }, (_, i) => `file${i}.ts`);
-    const result = await readChangedFiles(pi, files);
+    const result = await readChangedFiles(pi, files, { limits: FALLBACK_LIMITS });
     // Some files should be marked as skipped
     const skipped = result.sections.filter((s) => s.includes("skipped"));
     expect(skipped.length).toBeGreaterThan(0);

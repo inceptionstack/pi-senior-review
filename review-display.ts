@@ -51,11 +51,36 @@ export interface ReviewDisplayState {
   maxLoops: number;
   model: string;
   startTime: number;
+  /** Tool usage count per file (keyed by file path from files[]) */
+  toolCounts: Map<string, number>;
+  /** Total tool calls across all files */
+  totalToolCalls: number;
 }
 
 export interface ReviewDisplayHandle {
   update(patch: Partial<ReviewDisplayState>): void;
+  /** Record a tool call, associating it with the best-matching file. */
+  recordToolCall(toolName: string, targetPath: string | null): void;
   stop(): void;
+}
+
+// ── Helpers ──────────────────────────────────────────
+
+/**
+ * Find the best matching file in the file list for a given path.
+ * Matches by suffix (e.g. "/foo/bar/index.ts" matches "index.ts" in the list).
+ * Returns the matched file path or null.
+ */
+function findMatchingFile(files: string[], path: string): string | null {
+  if (!path) return null;
+  // Exact match first
+  const exact = files.find((f) => f === path);
+  if (exact) return exact;
+  // Suffix match: path ends with the file, or file ends with path
+  for (const f of files) {
+    if (f.endsWith(path) || path.endsWith(f)) return f;
+  }
+  return null;
 }
 
 // ── Rendering ────────────────────────────────────────
@@ -84,12 +109,16 @@ export function buildReviewWidget(
   const fileLines: string[] = [];
   const elapsed = ((Date.now() - state.startTime) / 1000).toFixed(0);
   const modelShort = (state.model || "").split("/").pop() ?? "";
+  const toolInfo = state.totalToolCalls > 0
+    ? theme.fg("dim", ` tools: ${state.totalToolCalls}`)
+    : "";
 
   fileLines.push(
     theme.fg("accent", theme.bold(`${spinner} Reviewing…`)) +
       theme.fg("dim", ` [${state.loopCount}/${state.maxLoops}]`) +
       theme.fg("dim", ` ${modelShort}`) +
-      theme.fg("dim", ` ${elapsed}s`),
+      theme.fg("dim", ` ${elapsed}s`) +
+      toolInfo,
   );
   fileLines.push("");
 
@@ -97,9 +126,16 @@ export function buildReviewWidget(
     fileLines.push(theme.fg("muted", "Files:"));
     for (const f of state.files) {
       const shortPath = f.split("/").slice(-3).join("/");
+      const count = state.toolCounts.get(f) ?? 0;
+      const toolTag = count > 0 ? theme.fg("dim", ` [${count} tool${count > 1 ? "s" : ""}]`) : "";
+
       if (f === state.activeFile) {
         fileLines.push(
-          `  ${theme.fg("accent", "▸")} ${theme.fg("accent", shortPath)} ${theme.fg("warning", "← reviewing")}`,
+          `  ${theme.fg("accent", "▸")} ${theme.fg("warning", shortPath)}${toolTag} ${theme.fg("warning", "← reviewing")}`,
+        );
+      } else if (count > 0) {
+        fileLines.push(
+          `  ${theme.fg("success", "✓")} ${theme.fg("muted", shortPath)}${toolTag}`,
         );
       } else {
         fileLines.push(`  ${theme.fg("dim", "·")} ${theme.fg("muted", shortPath)}`);
@@ -143,7 +179,10 @@ export function startReviewDisplay(
   },
   initialState: ReviewDisplayState,
 ): ReviewDisplayHandle {
-  const state = { ...initialState };
+  const state: ReviewDisplayState = {
+    ...initialState,
+    toolCounts: new Map(initialState.toolCounts),
+  };
 
   // Per-instance animation state
   let animFrame = 0;
@@ -170,7 +209,35 @@ export function startReviewDisplay(
 
   return {
     update(patch: Partial<ReviewDisplayState>) {
+      if (patch.toolCounts) {
+        state.toolCounts = new Map(patch.toolCounts);
+        delete (patch as any).toolCounts;
+      }
       Object.assign(state, patch);
+      redraw();
+    },
+    recordToolCall(toolName: string, targetPath: string | null) {
+      state.totalToolCalls++;
+
+      // Try to associate this tool call with a file
+      const match = targetPath ? findMatchingFile(state.files, targetPath) : null;
+      if (match) {
+        state.toolCounts.set(match, (state.toolCounts.get(match) ?? 0) + 1);
+        state.activeFile = match;
+      }
+
+      // Set activity based on tool type
+      if (toolName === "read" && targetPath) {
+        const short = targetPath.split("/").slice(-3).join("/");
+        state.activity = `reading ${short}`;
+      } else if (toolName === "bash") {
+        state.activity = `$ ${(targetPath ?? "").slice(0, 50)}`;
+      } else if (toolName === "grep" || toolName === "find" || toolName === "ls") {
+        state.activity = `${toolName} ${(targetPath ?? "").slice(0, 40)}`;
+      } else {
+        state.activity = `${toolName}…`;
+      }
+
       redraw();
     },
     stop() {

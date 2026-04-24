@@ -51,6 +51,8 @@ export interface ReviewOptions {
   filesReviewed?: string[];
   /** Called when the reviewer uses tools — for status bar updates */
   onActivity?: (description: string) => void;
+  /** Called with structured tool call info — for display widget */
+  onToolCall?: (toolName: string, targetPath: string | null) => void;
 }
 
 /** Review text markers that indicate where the actual review findings start. */
@@ -240,6 +242,11 @@ export async function runReviewSession(prompt: string, opts: ReviewOptions): Pro
       const activity = formatActivity(name, args);
       log(`reviewer tool: ${activity}`);
       opts.onActivity?.(activity);
+      // Emit structured tool call for display widget
+      const targetPath = name === "read" ? (args?.path ?? null)
+        : (name === "bash") ? (args?.command ?? null)
+        : (args?.path ?? args?.pattern ?? null);
+      opts.onToolCall?.(name, targetPath);
     }
     if (ev.type === "tool_execution_end") {
       opts.onActivity?.("analyzing…");

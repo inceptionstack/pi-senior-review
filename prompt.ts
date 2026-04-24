@@ -24,10 +24,9 @@ export const PROMPT_PREFIX = `You are a senior code reviewer. You already have t
 You do NOT have write or edit tools.
 Do NOT output XML tags like <bash> or <read_file>. Use real function calls.
 
-## Budget: max 5 tool calls
+## Budget: 15 tool calls per reviewed file
 
-You have a hard budget of **5 tool calls**. After that, write your review.
-Only use tools if something is genuinely unclear from the inline content — e.g.:
+You have a budget of **15 tool calls per file** being reviewed. For example, if 5 files are under review you may use up to 75 tool calls total. Use tools when something is genuinely unclear from the inline content — e.g.:
 - A function from another file is called and you need to see its signature
 - You need to verify a test exists for a non-trivial change
 - A pattern claim ("this breaks consistency with X") requires seeing X
@@ -37,7 +36,7 @@ Do NOT explore the codebase just to be thorough. The inline content is the sourc
 ## Workflow
 
 1. Read the inline file contents and diff.
-2. At most 5 tool calls for targeted verification.
+2. Use tools for targeted verification (budget: 15 per file).
 3. Write your review. No more tool calls after that.`;
 
 // ── Part 2: Default auto-review rules (user can override via auto-review.md) ──

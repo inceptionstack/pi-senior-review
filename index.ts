@@ -44,7 +44,7 @@ import {
   collectModifiedPaths,
   isFormattingOnlyTurn,
 } from "./changes";
-import { getBestReviewContent } from "./context";
+import { getBestReviewContent, FALLBACK_LIMITS, LARGE_LIMITS } from "./context";
 import { loadIgnorePatterns, filterIgnored } from "./ignore";
 import {
   loadRoundupRules,
@@ -110,6 +110,7 @@ export default function (pi: ExtensionAPI) {
     cwd: string,
     filesReviewed: string[],
     onActivity?: (desc: string) => void,
+    onToolCall?: (toolName: string, targetPath: string | null) => void,
   ) {
     return {
       signal,
@@ -119,18 +120,20 @@ export default function (pi: ExtensionAPI) {
       timeoutMs: settings.reviewTimeoutMs,
       filesReviewed,
       onActivity,
+      onToolCall,
     };
   }
 
   /**
-   * Start the visual review progress widget and return a combined activity
-   * callback that updates both the status bar and the widget.
+   * Start the visual review progress widget and return callbacks
+   * for activity updates and tool call tracking.
    */
   function startReviewWidget(
     ctx: { ui: any; hasUI?: boolean },
     files: string[],
-  ): (desc: string) => void {
-    if (!ctx.hasUI) return (desc) => updateStatus(ctx, desc);
+  ): { onActivity: (desc: string) => void; onToolCall: (toolName: string, targetPath: string | null) => void } {
+    const statusOnly = (desc: string) => updateStatus(ctx, desc);
+    if (!ctx.hasUI) return { onActivity: statusOnly, onToolCall: () => {} };
 
     reviewDisplay = startReviewDisplay(ctx.ui, {
       files,
@@ -140,20 +143,39 @@ export default function (pi: ExtensionAPI) {
       maxLoops: settings.maxReviewLoops,
       model: settings.model,
       startTime: Date.now(),
+      toolCounts: new Map(),
+      totalToolCalls: 0,
     });
 
-    return (desc: string) => {
-      updateStatus(ctx, desc);
-      if (!reviewDisplay) return;
-      // Try to extract the active file from the activity description
-      const readMatch = desc.match(/^reading\s+(.+)/);
-      if (readMatch) {
-        const path = readMatch[1];
-        reviewDisplay.update({ activity: desc, activeFile: path });
-      } else {
-        reviewDisplay.update({ activity: desc });
-      }
+    return {
+      onActivity: (desc: string) => {
+        updateStatus(ctx, desc);
+        if (reviewDisplay) reviewDisplay.update({ activity: desc });
+      },
+      onToolCall: (toolName: string, targetPath: string | null) => {
+        if (reviewDisplay) reviewDisplay.recordToolCall(toolName, targetPath);
+      },
     };
+  }
+
+  /**
+   * Check if an error indicates the model's context window was exceeded.
+   */
+  function isContextOverflowError(err: any): boolean {
+    const msg = (err?.message ?? String(err)).toLowerCase();
+    return (
+      msg.includes("too many tokens") ||
+      (msg.includes("context") && msg.includes("length")) ||
+      (msg.includes("context") && msg.includes("window")) ||
+      (msg.includes("context") && msg.includes("too long")) ||
+      (msg.includes("maximum") && msg.includes("token")) ||
+      (msg.includes("input") && msg.includes("too large")) ||
+      (msg.includes("prompt") && msg.includes("too long")) ||
+      (msg.includes("exceeds") && msg.includes("context")) ||
+      (msg.includes("exceeds") && msg.includes("token")) ||
+      msg.includes("payload too large") ||
+      msg.includes("request too large")
+    );
   }
 
   function resetTrackingState(ctx: { ui: any; hasUI?: boolean }) {
@@ -325,12 +347,12 @@ export default function (pi: ExtensionAPI) {
 
               if (best) {
                 updateStatus(ctx, "analyzing…");
-                const activityCb = startReviewWidget(ctx, best.files);
+                const { onActivity, onToolCall } = startReviewWidget(ctx, best.files);
                 const prompt = `${buildReviewPrompt(autoReviewRules, customRules)}\n\n---\n\n${best.content}`;
                 log("prompt length:", prompt.length);
                 const result = await runReviewSession(
                   prompt,
-                  buildReviewOptions(reviewAbort.signal, ctx.cwd, best.files, activityCb),
+                  buildReviewOptions(reviewAbort.signal, ctx.cwd, best.files, onActivity, onToolCall),
                 );
                 log("result:", {
                   isLgtm: result.isLgtm,
@@ -502,7 +524,7 @@ export default function (pi: ExtensionAPI) {
       log("modifiedFiles:", [...modifiedFiles]);
       log("agentToolCalls:", agentToolCalls.length);
 
-      const best = await getBestReviewContent(
+      let best = await getBestReviewContent(
         pi,
         agentToolCalls,
         (msg) => updateStatus(ctx, msg),
@@ -511,7 +533,6 @@ export default function (pi: ExtensionAPI) {
       );
 
       if (!best || best.content.trim().length < MIN_REVIEW_CONTENT_LENGTH) {
-        // No meaningful changes to review, or content too small
         log("no meaningful changes, skipping");
         resetTrackingState(ctx);
         return;
@@ -528,22 +549,45 @@ export default function (pi: ExtensionAPI) {
       }
 
       updateStatus(ctx, "analyzing…");
-      const activityCb = startReviewWidget(ctx, best.files);
+      const { onActivity, onToolCall } = startReviewWidget(ctx, best.files);
       log(
         `Reviewing ${best.files.length} files via ${best.label || "git diff"}: ${best.files.join(", ")}`,
       );
-      const prompt = `${buildReviewPrompt(autoReviewRules, customRules)}\n\n---\n\n${best.content}`;
-      const result = await runReviewSession(
-        prompt,
-        buildReviewOptions(reviewAbort.signal, ctx.cwd, best.files, activityCb),
-      );
+      let prompt = `${buildReviewPrompt(autoReviewRules, customRules)}\n\n---\n\n${best.content}`;
+      let result;
+      try {
+        result = await runReviewSession(
+          prompt,
+          buildReviewOptions(reviewAbort.signal, ctx.cwd, best.files, onActivity, onToolCall),
+        );
+      } catch (retryErr: any) {
+        if (!isContextOverflowError(retryErr)) throw retryErr;
+        log("Context overflow, retrying with fallback limits");
+        onActivity("retrying with smaller context…");
+        const smallBest = await getBestReviewContent(
+          pi, agentToolCalls, (msg) => updateStatus(ctx, msg),
+          ignorePatterns ?? undefined, allRoots, FALLBACK_LIMITS,
+        );
+        if (!smallBest || smallBest.content.trim().length < MIN_REVIEW_CONTENT_LENGTH) {
+          log("Fallback content too small, skipping review");
+          resetTrackingState(ctx);
+          return;
+        }
+        best = smallBest;
+        prompt = `${buildReviewPrompt(autoReviewRules, customRules)}\n\n---\n\n${best.content}`;
+        result = await runReviewSession(
+          prompt,
+          buildReviewOptions(reviewAbort.signal, ctx.cwd, best.files, onActivity, onToolCall),
+        );
+      }
 
       // Track change summary and files for roundup
       sessionChangeSummaries.push(best.content.slice(0, 5000));
       for (const f of best.files) sessionChangedFiles.add(f);
 
       // Mark content as reviewed (only after successful completion)
-      lastReviewedContentHash = contentHash;
+      // Recompute hash since fallback retry may have replaced best
+      lastReviewedContentHash = createHash("sha256").update(best.content).digest("hex");
 
       if (result.isLgtm) {
         lastReviewHadIssues = false;
@@ -995,14 +1039,14 @@ export default function (pi: ExtensionAPI) {
         const commitLog = (
           await pi.exec("git", ["log", "--oneline", `-${effectiveCount}`], { timeout: 5000 })
         ).stdout.trim();
-        const truncatedDiff = truncateDiff(diff, 30000);
+        const truncatedDiff = truncateDiff(diff, LARGE_LIMITS.maxDiffSize);
         const commitLabel = `last ${effectiveCount} commit${effectiveCount > 1 ? "s" : ""}`;
 
         const prompt = `${buildReviewPrompt(autoReviewRules, customRules)}\n\n---\n\nReview the following git diff (${commitLabel}):\n\nCommits:\n${commitLog}\n\nDiff:\n\`\`\`diff\n${truncatedDiff}\n\`\`\``;
-        const activityCb = startReviewWidget(ctx, changedFiles);
+        const { onActivity, onToolCall } = startReviewWidget(ctx, changedFiles);
         const result = await runReviewSession(
           prompt,
-          buildReviewOptions(reviewAbort!.signal, ctx.cwd, changedFiles, activityCb),
+          buildReviewOptions(reviewAbort!.signal, ctx.cwd, changedFiles, onActivity, onToolCall),
         );
 
         sendReviewResult(pi, result, commitLabel);

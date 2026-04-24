@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatReviewContext } from "../context";
+import { formatReviewContext, FALLBACK_LIMITS } from "../context";
 import type { ReviewContext } from "../context";
 
 function makeContext(overrides?: Partial<ReviewContext>): ReviewContext {
@@ -57,7 +57,7 @@ describe("formatReviewContext", () => {
   it("formatReviewContext_LargeDiff_Truncates", () => {
     const largeDiff = "x".repeat(50000);
     const ctx = makeContext({ diff: largeDiff });
-    const result = formatReviewContext(ctx);
+    const result = formatReviewContext(ctx, FALLBACK_LIMITS);
     expect(result).toContain("diff truncated");
   });
 

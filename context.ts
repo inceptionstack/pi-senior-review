@@ -3,6 +3,9 @@
  *
  * Gathers: file tree, changed files list, full file contents, git diff.
  * Falls back gracefully when git is unavailable.
+ *
+ * All size limits are threaded explicitly through function parameters —
+ * no module-level mutable state.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -25,8 +28,29 @@ export interface ReviewContext {
   commitLog: string;
 }
 
-const MAX_FILE_SIZE = 10_000;
-const MAX_TOTAL_CONTENT_SIZE = 60_000;
+/**
+ * Size limits for content gathering.
+ * The "large" profile targets ~800k chars (~200k tokens) for models with 1M+ context.
+ * The "fallback" profile targets ~120k chars (~30k tokens) for 200k context models
+ * or when the large profile triggers a context-too-long error.
+ */
+export interface ContentSizeLimits {
+  maxFileSize: number;
+  maxTotalContentSize: number;
+  maxDiffSize: number;
+}
+
+export const LARGE_LIMITS: ContentSizeLimits = {
+  maxFileSize: 80_000,
+  maxTotalContentSize: 400_000,
+  maxDiffSize: 200_000,
+};
+
+export const FALLBACK_LIMITS: ContentSizeLimits = {
+  maxFileSize: 10_000,
+  maxTotalContentSize: 60_000,
+  maxDiffSize: 30_000,
+};
 
 export interface ReadFilesResult {
   sections: string[];
@@ -45,15 +69,17 @@ export async function readChangedFiles(
     root?: string;
     newFiles?: Set<string>;
     onStatus?: (msg: string) => void;
+    limits?: ContentSizeLimits;
   },
 ): Promise<ReadFilesResult> {
   const sections: string[] = [];
   const contents = new Map<string, string>();
   let totalSize = 0;
   const root = opts?.root;
+  const limits = opts?.limits ?? LARGE_LIMITS;
 
   for (const file of files) {
-    if (totalSize >= MAX_TOTAL_CONTENT_SIZE) {
+    if (totalSize >= limits.maxTotalContentSize) {
       sections.push(`### ${file}\n(skipped — total content size limit reached)`);
       contents.set(file, "(skipped — total content size limit reached)");
       continue;
@@ -62,7 +88,7 @@ export async function readChangedFiles(
     const fullPath = root ? `${root}/${file}` : file;
     opts?.onStatus?.(`reading ${fullPath}…`);
 
-    const readResult = await pi.exec("head", ["-c", String(MAX_FILE_SIZE + 100), fullPath], {
+    const readResult = await pi.exec("head", ["-c", String(limits.maxFileSize + 100), fullPath], {
       timeout: 5000,
     });
 
@@ -75,9 +101,9 @@ export async function readChangedFiles(
     let content = readResult.stdout;
     totalSize += content.length;
 
-    if (content.length > MAX_FILE_SIZE) {
+    if (content.length > limits.maxFileSize) {
       content =
-        content.slice(0, MAX_FILE_SIZE) + `\n\n... (truncated, ${content.length} total chars)`;
+        content.slice(0, limits.maxFileSize) + `\n\n... (truncated, ${content.length} total chars)`;
     }
 
     const newLabel = opts?.newFiles?.has(file) ? " (new file)" : "";
@@ -95,7 +121,9 @@ export async function buildReviewContext(
   pi: ExtensionAPI,
   onStatus?: (msg: string) => void,
   ignorePatterns?: string[],
+  limits?: ContentSizeLimits,
 ): Promise<ReviewContext | null> {
+  const lim = limits ?? LARGE_LIMITS;
   onStatus?.("getting diff…");
 
   const fullDiffResult = await pi.exec("git", ["diff", "HEAD"], { timeout: 15000 });
@@ -139,7 +167,10 @@ export async function buildReviewContext(
     }
   }
 
-  const { contents: fileContents } = await readChangedFiles(pi, changedFiles, { onStatus });
+  const { contents: fileContents } = await readChangedFiles(pi, changedFiles, {
+    onStatus,
+    limits: lim,
+  });
 
   onStatus?.("scanning file tree…");
   const treeResult = await pi.exec(
@@ -172,7 +203,8 @@ export async function buildReviewContext(
 /**
  * Format the review context into a prompt section.
  */
-export function formatReviewContext(ctx: ReviewContext): string {
+export function formatReviewContext(ctx: ReviewContext, limits?: ContentSizeLimits): string {
+  const maxDiff = (limits ?? LARGE_LIMITS).maxDiffSize;
   const parts: string[] = [];
 
   parts.push(`## Changed files (${ctx.changedFiles.length})\n`);
@@ -185,7 +217,7 @@ export function formatReviewContext(ctx: ReviewContext): string {
     parts.push(`### ${file}\n\`\`\`\n${content}\n\`\`\`\n`);
   }
 
-  parts.push(`## Git diff\n\`\`\`diff\n${truncateDiff(ctx.diff, 30000)}\n\`\`\`\n`);
+  parts.push(`## Git diff\n\`\`\`diff\n${truncateDiff(ctx.diff, maxDiff)}\n\`\`\`\n`);
 
   if (ctx.commitLog) {
     parts.push(`## Recent commits\n\`\`\`\n${ctx.commitLog}\n\`\`\`\n`);
@@ -227,13 +259,14 @@ export async function getContentFromGitRoots(
   ignorePatterns: string[] | undefined,
   summarySection: string,
   onStatus?: (msg: string) => void,
+  limits?: ContentSizeLimits,
 ): Promise<ReviewContent | null> {
   const allContexts: string[] = [];
   const allFiles: string[] = [];
 
   for (const root of gitRoots) {
     onStatus?.(`checking ${root}…`);
-    const repoContext = await buildRepoContext(pi, root, ignorePatterns, onStatus);
+    const repoContext = await buildRepoContext(pi, root, ignorePatterns, onStatus, limits);
     if (!repoContext) continue;
 
     allFiles.push(...repoContext.files.map((f) => `${root}/${f}`));
@@ -259,7 +292,9 @@ async function buildRepoContext(
   root: string,
   ignorePatterns: string[] | undefined,
   onStatus?: (msg: string) => void,
+  limits?: ContentSizeLimits,
 ): Promise<{ text: string; files: string[] } | null> {
+  const lim = limits ?? LARGE_LIMITS;
   let diff = "";
   let files: string[] = [];
   let commitLabel = "";
@@ -310,6 +345,7 @@ async function buildRepoContext(
     root,
     newFiles: untrackedFiles,
     onStatus,
+    limits: lim,
   });
 
   // Re-run diff scoped to filtered files only (use correct range)
@@ -349,7 +385,7 @@ async function buildRepoContext(
     `Changed files: ${fileList}\n\n` +
     commitSection +
     `## Full file contents\n\n${fileSections.join("\n\n")}\n\n` +
-    `## Git diff\n\`\`\`diff\n${truncateDiff(scopedDiff, 30000)}\n\`\`\``;
+    `## Git diff\n\`\`\`diff\n${truncateDiff(scopedDiff, lim.maxDiffSize)}\n\`\`\``;
 
   return { text, files: filteredFiles };
 }
@@ -381,13 +417,15 @@ export async function getContentFromCwd(
   ignorePatterns: string[] | undefined,
   summarySection: string,
   onStatus?: (msg: string) => void,
+  limits?: ContentSizeLimits,
 ): Promise<ReviewContent | null> {
-  const reviewContext = await buildReviewContext(pi, onStatus, ignorePatterns);
+  const lim = limits ?? LARGE_LIMITS;
+  const reviewContext = await buildReviewContext(pi, onStatus, ignorePatterns, lim);
   if (!reviewContext) return null;
 
   log("path2: cwd git repo, files=", reviewContext.changedFiles);
   return {
-    content: formatReviewContext(reviewContext) + summarySection,
+    content: formatReviewContext(reviewContext, lim) + summarySection,
     label: "",
     files: reviewContext.changedFiles,
   };
@@ -400,7 +438,9 @@ export async function getContentFromLastCommit(
   ignorePatterns: string[] | undefined,
   summarySection: string,
   onStatus?: (msg: string) => void,
+  limits?: ContentSizeLimits,
 ): Promise<ReviewContent | null> {
+  const lim = limits ?? LARGE_LIMITS;
   onStatus?.("checking last commit…");
   try {
     const lastCommitDiff = await pi.exec("git", ["diff", "HEAD~1", "HEAD"], { timeout: 15000 });
@@ -423,15 +463,20 @@ export async function getContentFromLastCommit(
     // Re-scope diff to filtered files only
     let diff = lastCommitDiff.stdout.trim();
     if (ignorePatterns && ignorePatterns.length > 0) {
-      const scopedResult = await pi.exec("git", ["diff", "HEAD~1", "HEAD", "--", ...files], { timeout: 15000 });
+      const scopedResult = await pi.exec("git", ["diff", "HEAD~1", "HEAD", "--", ...files], {
+        timeout: 15000,
+      });
       if (scopedResult.code === 0 && scopedResult.stdout.trim()) {
         diff = scopedResult.stdout.trim();
       }
     }
 
-    const truncated = truncateDiff(diff, 30000);
+    const truncated = truncateDiff(diff, lim.maxDiffSize);
 
-    const { sections: fileSections } = await readChangedFiles(pi, files, { onStatus });
+    const { sections: fileSections } = await readChangedFiles(pi, files, {
+      onStatus,
+      limits: lim,
+    });
     const fileSection =
       fileSections.length > 0 ? `\n\n## Full file contents\n\n${fileSections.join("\n\n")}` : "";
 
@@ -453,7 +498,9 @@ export async function getContentFromToolCalls(
   agentToolCalls: TrackedToolCall[],
   changeSummary: string,
   onStatus?: (msg: string) => void,
+  limits?: ContentSizeLimits,
 ): Promise<ReviewContent | null> {
+  const lim = limits ?? LARGE_LIMITS;
   if (agentToolCalls.length === 0) return null;
 
   const candidatePaths = collectModifiedPaths(agentToolCalls);
@@ -474,8 +521,8 @@ export async function getContentFromToolCalls(
 
       reviewedFiles.push(filePath);
       const fileContent =
-        result.stdout.length > 10000
-          ? result.stdout.slice(0, 10000) +
+        result.stdout.length > lim.maxFileSize
+          ? result.stdout.slice(0, lim.maxFileSize) +
             `\n\n... (truncated, ${result.stdout.length} total chars)`
           : result.stdout;
       parts.push(`### ${filePath}\n\`\`\`\n${fileContent}\n\`\`\``);
@@ -501,6 +548,7 @@ export async function getContentFromToolCalls(
 /**
  * Get the best available review content.
  * Tries: git roots → cwd git repo → last commit → tool call summaries.
+ * All size limits are threaded explicitly to sub-functions.
  */
 export async function getBestReviewContent(
   pi: ExtensionAPI,
@@ -508,7 +556,10 @@ export async function getBestReviewContent(
   onStatus?: (msg: string) => void,
   ignorePatterns?: string[],
   gitRoots?: Set<string>,
+  limits?: ContentSizeLimits,
 ): Promise<ReviewContent | null> {
+  const lim = limits ?? LARGE_LIMITS;
+
   log(
     "getBestReviewContent: gitRoots=",
     gitRoots ? [...gitRoots] : "none",
@@ -525,15 +576,22 @@ export async function getBestReviewContent(
       ignorePatterns,
       summarySection,
       onStatus,
+      lim,
     );
     if (result) return result;
   }
 
-  const cwdResult = await getContentFromCwd(pi, ignorePatterns, summarySection, onStatus);
+  const cwdResult = await getContentFromCwd(pi, ignorePatterns, summarySection, onStatus, lim);
   if (cwdResult) return cwdResult;
 
-  const lastCommitResult = await getContentFromLastCommit(pi, ignorePatterns, summarySection, onStatus);
+  const lastCommitResult = await getContentFromLastCommit(
+    pi,
+    ignorePatterns,
+    summarySection,
+    onStatus,
+    lim,
+  );
   if (lastCommitResult) return lastCommitResult;
 
-  return getContentFromToolCalls(pi, agentToolCalls, changeSummary, onStatus);
+  return getContentFromToolCalls(pi, agentToolCalls, changeSummary, onStatus, lim);
 }

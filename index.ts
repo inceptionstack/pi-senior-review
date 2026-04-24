@@ -43,6 +43,7 @@ import {
   isFileModifyingTool,
   collectModifiedPaths,
   isFormattingOnlyTurn,
+  isBinaryPath,
 } from "./changes";
 import { getBestReviewContent, FALLBACK_LIMITS, LARGE_LIMITS } from "./context";
 import { loadIgnorePatterns, filterIgnored } from "./ignore";
@@ -1062,6 +1063,217 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify("Review cancelled", "info");
         } else {
           log(`ERROR: commit review failed: ${err?.message ?? err}`);
+          ctx.ui.notify(`Review failed: ${err?.message ?? err}`, "error");
+        }
+      } finally {
+        finishReview(ctx, false);
+      }
+    },
+  });
+
+  // ── /review-all command ────────────────────────────
+
+  pi.registerCommand("review-all", {
+    description: "Review all changes in the repo (pending diff, last commit, or all files in cwd)",
+    handler: async (_args, ctx) => {
+      // Prevent concurrent reviews
+      if (isReviewing && reviewAbort) {
+        log("Cancelling in-progress review for /review-all");
+        reviewAbort.abort();
+        isReviewing = false;
+        reviewAbort = null;
+      }
+
+      isReviewing = true;
+      reviewAbort = new AbortController();
+      updateStatus(ctx);
+
+      try {
+        const { resolve } = await import("node:path");
+
+        // Check if we're in a git repo
+        const gitCheck = await pi.exec("git", ["rev-parse", "--show-toplevel"], { timeout: 5000 });
+        const isGitRepo = gitCheck.code === 0;
+        const gitRoot = isGitRepo ? gitCheck.stdout.trim() : null;
+
+        let reviewFiles: string[] = [];
+        let prompt: string;
+
+        if (isGitRepo && gitRoot) {
+          // ── Git repo: try pending changes first, then last commit ──
+
+          // Get pending changes (staged + unstaged vs HEAD)
+          const pendingDiff = await pi.exec("git", ["diff", "HEAD"], { timeout: 15000 });
+          const hasPendingDiff = pendingDiff.code === 0 && pendingDiff.stdout.trim();
+
+          // Get pending changed files
+          const pendingNames = await pi.exec("git", ["diff", "HEAD", "--name-only"], { timeout: 5000 });
+          let pendingFiles = pendingNames.code === 0
+            ? pendingNames.stdout.trim().split("\n").filter(Boolean)
+            : [];
+
+          // Include untracked files
+          const untrackedResult = await pi.exec(
+            "git", ["ls-files", "--others", "--exclude-standard"], { timeout: 5000 },
+          );
+          if (untrackedResult.code === 0 && untrackedResult.stdout.trim()) {
+            const untracked = untrackedResult.stdout.trim().split("\n").filter(Boolean);
+            const existing = new Set(pendingFiles);
+            for (const f of untracked) {
+              if (!existing.has(f)) pendingFiles.push(f);
+            }
+          }
+
+          if (hasPendingDiff || pendingFiles.length > 0) {
+            // ── Path A: pending changes ──
+            reviewFiles = pendingFiles;
+
+            if (ignorePatterns && ignorePatterns.length > 0) {
+              reviewFiles = filterIgnored(reviewFiles, ignorePatterns);
+            }
+
+            if (reviewFiles.length === 0) {
+              ctx.ui.notify("No reviewable pending changes (all ignored).", "info");
+              return;
+            }
+
+            // Build per-file sections
+            const fileSections: string[] = [];
+            for (const file of reviewFiles) {
+              const fullPath = `${gitRoot}/${file}`;
+              const fileDiffResult = await pi.exec(
+                "git", ["diff", "HEAD", "--", file], { timeout: 10000 },
+              );
+              const fileDiff = fileDiffResult.code === 0 ? fileDiffResult.stdout.trim() : "";
+              const commitsResult = await pi.exec(
+                "git", ["log", "--oneline", "-5", "--", file], { timeout: 5000 },
+              );
+              const commits = commitsResult.code === 0 ? commitsResult.stdout.trim() : "";
+
+              let section = `### ${fullPath}\n**Full path:** \`${fullPath}\`\n`;
+              if (commits) section += `\n**Recent commits:**\n\`\`\`\n${commits}\n\`\`\`\n`;
+              if (fileDiff) {
+                section += `\n**Diff:**\n\`\`\`diff\n${truncateDiff(fileDiff, LARGE_LIMITS.maxDiffSize)}\n\`\`\`\n`;
+              } else {
+                section += `\n*New/untracked file — read to review its contents.*\n`;
+              }
+              fileSections.push(section);
+            }
+
+            ctx.ui.notify(`Reviewing ${reviewFiles.length} pending file(s)…`, "info");
+            prompt = `${buildReviewPrompt(autoReviewRules, customRules, lastUserMessage)}\n\n---\n\nReview all pending changes in the repo.\n\n## Files to review\n\nRead each file with read(path) to see its full contents.\n\n${fileSections.join("\n\n---\n\n")}`;
+
+          } else {
+            // ── Path B: no pending changes — review last commit ──
+            const lastDiff = await pi.exec("git", ["diff", "HEAD~1", "HEAD"], { timeout: 15000 });
+            if (lastDiff.code !== 0 || !lastDiff.stdout.trim()) {
+              ctx.ui.notify("No pending changes and no commits to review.", "info");
+              return;
+            }
+
+            const lastNames = await pi.exec(
+              "git", ["diff", "HEAD~1", "HEAD", "--name-only"], { timeout: 5000 },
+            );
+            reviewFiles = lastNames.code === 0
+              ? lastNames.stdout.trim().split("\n").filter(Boolean)
+              : [];
+
+            if (ignorePatterns && ignorePatterns.length > 0) {
+              reviewFiles = filterIgnored(reviewFiles, ignorePatterns);
+            }
+
+            if (reviewFiles.length === 0) {
+              ctx.ui.notify("No reviewable files in last commit (all ignored).", "info");
+              return;
+            }
+
+            const commitLog = (
+              await pi.exec("git", ["log", "--oneline", "-1"], { timeout: 5000 })
+            ).stdout.trim();
+
+            // Build per-file sections
+            const fileSections: string[] = [];
+            for (const file of reviewFiles) {
+              const fullPath = `${gitRoot}/${file}`;
+              const fileDiffResult = await pi.exec(
+                "git", ["diff", "HEAD~1", "HEAD", "--", file], { timeout: 10000 },
+              );
+              const fileDiff = fileDiffResult.code === 0 ? fileDiffResult.stdout.trim() : "";
+              const commitsResult = await pi.exec(
+                "git", ["log", "--oneline", "-5", "--", file], { timeout: 5000 },
+              );
+              const commits = commitsResult.code === 0 ? commitsResult.stdout.trim() : "";
+
+              let section = `### ${fullPath}\n**Full path:** \`${fullPath}\`\n`;
+              if (commits) section += `\n**Recent commits:**\n\`\`\`\n${commits}\n\`\`\`\n`;
+              if (fileDiff) {
+                section += `\n**Diff:**\n\`\`\`diff\n${truncateDiff(fileDiff, LARGE_LIMITS.maxDiffSize)}\n\`\`\`\n`;
+              }
+              fileSections.push(section);
+            }
+
+            ctx.ui.notify(`Reviewing last commit (${commitLog})…`, "info");
+            prompt = `${buildReviewPrompt(autoReviewRules, customRules, lastUserMessage)}\n\n---\n\nReview the last commit: ${commitLog}\n\n## Files to review\n\nRead each file with read(path) to see its full contents.\n\n${fileSections.join("\n\n---\n\n")}`;
+          }
+
+        } else {
+          // ── Path C: not a git repo — review all files in cwd ──
+          const findResult = await pi.exec(
+            "find", [".",
+              "-maxdepth", "5", "-type", "f",
+              "-not", "-path", "*/node_modules/*",
+              "-not", "-path", "*/.git/*",
+              "-not", "-path", "*/dist/*",
+              "-not", "-path", "*/build/*",
+              "-not", "-name", "*.min.*",
+            ],
+            { timeout: 10000 },
+          );
+          if (findResult.code !== 0 || !findResult.stdout.trim()) {
+            ctx.ui.notify("No files found in current directory.", "warning");
+            return;
+          }
+
+          reviewFiles = findResult.stdout.trim().split("\n")
+            .filter(Boolean)
+            .filter((f) => !isBinaryPath(f));
+
+          if (ignorePatterns && ignorePatterns.length > 0) {
+            reviewFiles = filterIgnored(reviewFiles, ignorePatterns);
+          }
+
+          if (reviewFiles.length === 0) {
+            ctx.ui.notify("No reviewable files found (all ignored or binary).", "info");
+            return;
+          }
+
+          const fileSections = reviewFiles.map((f) => {
+            const fullPath = resolve(ctx.cwd, f);
+            return `### ${fullPath}\n**Full path:** \`${fullPath}\``;
+          });
+
+          ctx.ui.notify(`Reviewing ${reviewFiles.length} file(s) in cwd…`, "info");
+          prompt = `${buildReviewPrompt(autoReviewRules, customRules, lastUserMessage)}\n\n---\n\nReview all files in the project (not a git repo, no diffs available).\n\n## Files to review\n\nRead each file with read(path) to see its full contents.\n\n${fileSections.join("\n\n---\n\n")}`;
+        }
+
+        // ── Run the review ──
+        const fullPaths = reviewFiles.map((f) => {
+          if (f.startsWith("/")) return f;
+          return gitRoot ? `${gitRoot}/${f}` : resolve(ctx.cwd, f);
+        });
+
+        const { onActivity, onToolCall } = startReviewWidget(ctx, fullPaths);
+        const result = await runReviewSession(
+          prompt,
+          buildReviewOptions(reviewAbort!.signal, ctx.cwd, fullPaths, onActivity, onToolCall),
+        );
+
+        sendReviewResult(pi, result, "all changes");
+      } catch (err: any) {
+        if (err?.message === "Review cancelled") {
+          ctx.ui.notify("Review cancelled", "info");
+        } else {
+          log(`ERROR: review-all failed: ${err?.message ?? err}`);
           ctx.ui.notify(`Review failed: ${err?.message ?? err}`, "error");
         }
       } finally {

@@ -28,8 +28,10 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
   type AutoReviewSettings,
   DEFAULT_SETTINGS,
+  configDirs,
   loadSettings,
   loadReviewRules,
+  loadAutoReviewRules,
   loadShortcutSettingsSync,
 } from "./settings";
 import { buildReviewPrompt } from "./prompt";
@@ -52,9 +54,11 @@ import {
 } from "./roundup";
 import { findGitRoot, resolveAllGitRoots } from "./git-roots";
 import { log, logRotate } from "./logger";
+import { startReviewDisplay, type ReviewDisplayHandle } from "./review-display";
 import {
   SCAFFOLD_SETTINGS,
   SCAFFOLD_REVIEW_RULES,
+  SCAFFOLD_AUTO_REVIEW,
   SCAFFOLD_ROUNDUP_RULES,
   SCAFFOLD_IGNORE,
 } from "./scaffold";
@@ -81,7 +85,10 @@ export default function (pi: ExtensionAPI) {
 
   let settings: AutoReviewSettings = { ...DEFAULT_SETTINGS };
   let customRules: string | null = null;
+  let autoReviewRules: string | null = null;
   let ignorePatterns: string[] | null = null;
+
+  let reviewDisplay: ReviewDisplayHandle | null = null;
 
   let agentToolCalls: TrackedToolCall[] = [];
   const modifiedFiles = new Set<string>();
@@ -115,6 +122,40 @@ export default function (pi: ExtensionAPI) {
     };
   }
 
+  /**
+   * Start the visual review progress widget and return a combined activity
+   * callback that updates both the status bar and the widget.
+   */
+  function startReviewWidget(
+    ctx: { ui: any; hasUI?: boolean },
+    files: string[],
+  ): (desc: string) => void {
+    if (!ctx.hasUI) return (desc) => updateStatus(ctx, desc);
+
+    reviewDisplay = startReviewDisplay(ctx.ui, {
+      files,
+      activeFile: null,
+      activity: "starting…",
+      loopCount: reviewLoopCount,
+      maxLoops: settings.maxReviewLoops,
+      model: settings.model,
+      startTime: Date.now(),
+    });
+
+    return (desc: string) => {
+      updateStatus(ctx, desc);
+      if (!reviewDisplay) return;
+      // Try to extract the active file from the activity description
+      const readMatch = desc.match(/^reading\s+(.+)/);
+      if (readMatch) {
+        const path = readMatch[1];
+        reviewDisplay.update({ activity: desc, activeFile: path });
+      } else {
+        reviewDisplay.update({ activity: desc });
+      }
+    };
+  }
+
   function resetTrackingState(ctx: { ui: any; hasUI?: boolean }) {
     agentToolCalls = [];
     modifiedFiles.clear();
@@ -143,6 +184,10 @@ export default function (pi: ExtensionAPI) {
     isReviewing = false;
     reviewAbort = null;
     clearActivityTimer();
+    if (reviewDisplay) {
+      reviewDisplay.stop();
+      reviewDisplay = null;
+    }
     if (resetTracking) {
       resetTrackingState(ctx);
     } else {
@@ -280,13 +325,12 @@ export default function (pi: ExtensionAPI) {
 
               if (best) {
                 updateStatus(ctx, "analyzing…");
-                const prompt = `${buildReviewPrompt(customRules)}\n\n---\n\n${best.content}`;
+                const activityCb = startReviewWidget(ctx, best.files);
+                const prompt = `${buildReviewPrompt(autoReviewRules, customRules)}\n\n---\n\n${best.content}`;
                 log("prompt length:", prompt.length);
                 const result = await runReviewSession(
                   prompt,
-                  buildReviewOptions(reviewAbort.signal, ctx.cwd, best.files, (desc) =>
-                    updateStatus(ctx, desc),
-                  ),
+                  buildReviewOptions(reviewAbort.signal, ctx.cwd, best.files, activityCb),
                 );
                 log("result:", {
                   isLgtm: result.isLgtm,
@@ -484,15 +528,14 @@ export default function (pi: ExtensionAPI) {
       }
 
       updateStatus(ctx, "analyzing…");
+      const activityCb = startReviewWidget(ctx, best.files);
       log(
         `Reviewing ${best.files.length} files via ${best.label || "git diff"}: ${best.files.join(", ")}`,
       );
-      const prompt = `${buildReviewPrompt(customRules)}\n\n---\n\n${best.content}`;
+      const prompt = `${buildReviewPrompt(autoReviewRules, customRules)}\n\n---\n\n${best.content}`;
       const result = await runReviewSession(
         prompt,
-        buildReviewOptions(reviewAbort.signal, ctx.cwd, best.files, (desc) =>
-          updateStatus(ctx, desc),
-        ),
+        buildReviewOptions(reviewAbort.signal, ctx.cwd, best.files, activityCb),
       );
 
       // Track change summary and files for roundup
@@ -518,6 +561,7 @@ export default function (pi: ExtensionAPI) {
           if (heuristic === "maybe") {
             roundupDone = true;
             updateStatus(ctx, "roundup judge…");
+            if (reviewDisplay) reviewDisplay.update({ activity: "roundup judge…" });
             const judge = await runRoundupJudge({
               signal: reviewAbort!.signal,
               cwd: ctx.cwd,
@@ -525,12 +569,16 @@ export default function (pi: ExtensionAPI) {
               changedFiles: [...sessionChangedFiles],
               peakLoopCount: peakReviewLoopCount,
               changeSummaries: sessionChangeSummaries,
-              onActivity: (desc) => updateStatus(ctx, `judge: ${desc}`),
+              onActivity: (desc) => {
+                updateStatus(ctx, `judge: ${desc}`);
+                if (reviewDisplay) reviewDisplay.update({ activity: `judge: ${desc}` });
+              },
             });
 
             if (judge.recommended) {
               log(`roundup: running — ${judge.reason}`);
               updateStatus(ctx, "roundup review…");
+              if (reviewDisplay) reviewDisplay.update({ activity: "roundup review…" });
               try {
                 const summaryText = sessionChangeSummaries.join("\n\n---\n\n");
                 await runRoundupReview({
@@ -540,7 +588,10 @@ export default function (pi: ExtensionAPI) {
                   model: settings.model,
                   customRules: roundupRules,
                   sessionChangeSummary: summaryText,
-                  onActivity: (desc) => updateStatus(ctx, `roundup: ${desc}`),
+                  onActivity: (desc) => {
+                    updateStatus(ctx, `roundup: ${desc}`);
+                    if (reviewDisplay) reviewDisplay.update({ activity: `roundup: ${desc}` });
+                  },
                 });
               } catch (err: any) {
                 if (err?.message === "Review cancelled") throw err;
@@ -633,6 +684,10 @@ export default function (pi: ExtensionAPI) {
       sessionChangeSummaries = [];
       sessionChangedFiles = new Set();
       clearActivityTimer();
+      if (reviewDisplay) {
+        reviewDisplay.stop();
+        reviewDisplay = null;
+      }
       resetTrackingState(ctx);
       if (ctx.hasUI) ctx.ui.notify("Senior review fully reset", "info");
     },
@@ -691,6 +746,7 @@ export default function (pi: ExtensionAPI) {
 
       const files: Record<string, string> = {
         "settings.json": SCAFFOLD_SETTINGS,
+        "auto-review.md": SCAFFOLD_AUTO_REVIEW,
         "review-rules.md": SCAFFOLD_REVIEW_RULES,
         "roundup.md": SCAFFOLD_ROUNDUP_RULES,
         ignore: SCAFFOLD_IGNORE,
@@ -717,6 +773,126 @@ export default function (pi: ExtensionAPI) {
 
       if (ctx.hasUI) ctx.ui.notify(msg, "info");
       log(`scaffold: ${msg}`);
+    },
+  });
+
+  // ── /senior-edit-review-rules command ───────────────
+
+  pi.registerCommand("senior-edit-review-rules", {
+    description: "Edit .senior-review/review-rules.md in pi's built-in editor",
+    handler: async (_args, ctx) => {
+      const { readFileSync, writeFileSync, mkdirSync, existsSync } = await import("node:fs");
+      const { join } = await import("node:path");
+
+      // Find existing review-rules.md (local first, then global)
+      const [localDir, globalDir] = configDirs(ctx.cwd);
+      let filePath: string | null = null;
+      let fileContent: string | null = null;
+
+      for (const dir of [localDir, globalDir]) {
+        const candidate = join(dir, "review-rules.md");
+        if (existsSync(candidate)) {
+          filePath = candidate;
+          try {
+            fileContent = readFileSync(candidate, "utf8");
+          } catch (err: any) {
+            // File exists but unreadable (permissions, etc.) — don't offer to overwrite
+            log(`senior-edit-review-rules: cannot read ${candidate}: ${err?.message}`);
+            if (ctx.hasUI) ctx.ui.notify(`Cannot read ${candidate}: ${err?.message}`, "error");
+            return;
+          }
+          break;
+        }
+      }
+
+      // If not found anywhere, offer to create from scaffold
+      if (!filePath) {
+        if (!ctx.hasUI) return;
+        const ok = await ctx.ui.confirm(
+          "No review-rules.md found",
+          `Create ${localDir}/review-rules.md from template?`,
+        );
+        if (!ok) return;
+
+        mkdirSync(localDir, { recursive: true });
+        filePath = join(localDir, "review-rules.md");
+        fileContent = SCAFFOLD_REVIEW_RULES;
+        writeFileSync(filePath, fileContent);
+        log(`senior-edit-review-rules: created ${filePath}`);
+      }
+
+      if (!ctx.hasUI) return;
+
+      // Open in pi's built-in editor
+      const edited = await ctx.ui.editor(`Edit ${filePath}`, fileContent!);
+
+      if (edited === undefined) {
+        ctx.ui.notify("Cancelled — no changes saved", "info");
+        return;
+      }
+
+      if (edited === fileContent) {
+        ctx.ui.notify("No changes made", "info");
+        return;
+      }
+
+      writeFileSync(filePath, edited);
+
+      // Reload rules so they take effect immediately
+      customRules = edited.trim() || null;
+      log(`senior-edit-review-rules: saved and reloaded ${filePath}`);
+      ctx.ui.notify(`Saved ${filePath}`, "info");
+    },
+  });
+
+  // ── /add-review-rule command ────────────────────────
+
+  pi.registerCommand("add-review-rule", {
+    description: "Prepend a custom rule to .senior-review/review-rules.md",
+    handler: async (args, ctx) => {
+      const rule = (args ?? "").trim();
+      if (!rule) {
+        if (ctx.hasUI) ctx.ui.notify("Usage: /add-review-rule <rule text>", "warning");
+        return;
+      }
+
+      const { readFileSync, writeFileSync, mkdirSync, existsSync } = await import("node:fs");
+      const { join } = await import("node:path");
+
+      const [localDir] = configDirs(ctx.cwd);
+      const filePath = join(localDir, "review-rules.md");
+
+      let existing = "";
+      if (existsSync(filePath)) {
+        try {
+          existing = readFileSync(filePath, "utf8");
+        } catch (err: any) {
+          log(`add-review-rule: cannot read ${filePath}: ${err?.message}`);
+          if (ctx.hasUI) ctx.ui.notify(`Cannot read ${filePath}: ${err?.message}`, "error");
+          return;
+        }
+      } else {
+        mkdirSync(localDir, { recursive: true });
+      }
+
+      const newContent = `- ${rule}\n${existing}`;
+      writeFileSync(filePath, newContent);
+
+      // Reload rules so they take effect immediately
+      customRules = newContent.trim() || null;
+      log(`add-review-rule: prepended rule to ${filePath}`);
+
+      // Show confirmation with preview
+      const lines = newContent.split("\n");
+      const preview = lines.slice(0, 10).join("\n");
+      const ellipsis = lines.length > 10 ? "\n. . ." : "";
+
+      if (ctx.hasUI) {
+        ctx.ui.notify(
+          `Rule added to ${filePath}\n\n${preview}${ellipsis}`,
+          "info",
+        );
+      }
     },
   });
 
@@ -822,10 +998,11 @@ export default function (pi: ExtensionAPI) {
         const truncatedDiff = truncateDiff(diff, 30000);
         const commitLabel = `last ${effectiveCount} commit${effectiveCount > 1 ? "s" : ""}`;
 
-        const prompt = `${buildReviewPrompt(customRules)}\n\n---\n\nReview the following git diff (${commitLabel}):\n\nCommits:\n${commitLog}\n\nDiff:\n\`\`\`diff\n${truncatedDiff}\n\`\`\``;
+        const prompt = `${buildReviewPrompt(autoReviewRules, customRules)}\n\n---\n\nReview the following git diff (${commitLabel}):\n\nCommits:\n${commitLog}\n\nDiff:\n\`\`\`diff\n${truncatedDiff}\n\`\`\``;
+        const activityCb = startReviewWidget(ctx, changedFiles);
         const result = await runReviewSession(
           prompt,
-          buildReviewOptions(reviewAbort!.signal, ctx.cwd, changedFiles),
+          buildReviewOptions(reviewAbort!.signal, ctx.cwd, changedFiles, activityCb),
         );
 
         sendReviewResult(pi, result, commitLabel);
@@ -852,18 +1029,21 @@ export default function (pi: ExtensionAPI) {
     sessionChangeSummaries = [];
     sessionChangedFiles = new Set();
 
-    const [rules, settingsResult, patterns, rRules] = await Promise.all([
+    const [rules, autoRules, settingsResult, patterns, rRules] = await Promise.all([
       loadReviewRules(ctx.cwd),
+      loadAutoReviewRules(ctx.cwd),
       loadSettings(ctx.cwd),
       loadIgnorePatterns(ctx.cwd),
       loadRoundupRules(ctx.cwd),
     ]);
 
     customRules = rules;
+    autoReviewRules = autoRules;
     ignorePatterns = patterns;
     roundupRules = rRules;
     settings = settingsResult.settings;
 
+    if (autoReviewRules) log("Loaded auto-review rules from .senior-review/auto-review.md");
     if (customRules) log("Loaded custom rules from .senior-review/review-rules.md");
     if (roundupRules) log("Loaded roundup rules from .senior-review/roundup.md");
     if (ignorePatterns)
@@ -884,6 +1064,10 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async () => {
     if (reviewAbort) reviewAbort.abort();
+    if (reviewDisplay) {
+      reviewDisplay.stop();
+      reviewDisplay = null;
+    }
     agentToolCalls = [];
     modifiedFiles.clear();
     pendingArgs.clear();

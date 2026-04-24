@@ -1,8 +1,19 @@
 /**
  * prompt.ts — Review prompt construction
+ *
+ * The review prompt has three parts:
+ *   1. PROMPT_PREFIX  — system preamble (tools, budget, workflow)
+ *   2. Auto-review rules — what to review / what not to report
+ *      (default: DEFAULT_AUTO_REVIEW_RULES, overridable via .senior-review/auto-review.md)
+ *   3. PROMPT_SUFFIX  — response format, examples, verdict instructions
+ *
+ * The user can override ONLY part 2 via auto-review.md.
+ * review-rules.md still appends additional project-specific rules at the end.
  */
 
-export const DEFAULT_REVIEW_PROMPT = `You are a senior code reviewer. You already have the full content of every changed file inline below, plus the git diff. You do NOT need to re-read the changed files with tools — they are right here.
+// ── Part 1: Prefix (always included, not user-editable) ──
+
+export const PROMPT_PREFIX = `You are a senior code reviewer. You already have the full content of every changed file inline below, plus the git diff. You do NOT need to re-read the changed files with tools — they are right here.
 
 ## Tools (use sparingly)
 
@@ -27,9 +38,11 @@ Do NOT explore the codebase just to be thorough. The inline content is the sourc
 
 1. Read the inline file contents and diff.
 2. At most 5 tool calls for targeted verification.
-3. Write your review. No more tool calls after that.
+3. Write your review. No more tool calls after that.`;
 
-## What to review (in priority order)
+// ── Part 2: Default auto-review rules (user can override via auto-review.md) ──
+
+export const DEFAULT_AUTO_REVIEW_RULES = `## What to review (in priority order)
 
 ### Correctness bugs
 - Off-by-one errors, boundary conditions (< vs <=, i=0 to length)
@@ -52,9 +65,11 @@ Do NOT explore the codebase just to be thorough. The inline content is the sourc
 - Style / naming preferences
 - Missing tests (unless the change is complex algorithmic logic)
 - Refactors unrelated to the current change
-- "Could be cleaner" opinions
+- "Could be cleaner" opinions`;
 
-## Response format
+// ── Part 3: Suffix (always included, not user-editable) ──
+
+export const PROMPT_SUFFIX = `## Response format
 
 Your response MUST follow this exact structure:
 
@@ -82,11 +97,22 @@ The verdict tag is MANDATORY. Without it, your review is invalid and will be re-
 
 Caught bugs > silence. If something looks wrong and you're 70%+ confident, FLAG IT. The user can push back on false positives.`;
 
+// ── Composite (for backwards compat / scaffold display) ──
+
+export const DEFAULT_REVIEW_PROMPT = `${PROMPT_PREFIX}\n\n${DEFAULT_AUTO_REVIEW_RULES}\n\n${PROMPT_SUFFIX}`;
+
 /**
- * Build the full review prompt with optional custom rules appended.
+ * Build the full review prompt.
+ *
+ * @param autoReviewRules — contents of .senior-review/auto-review.md, or null to use defaults
+ * @param customRules     — contents of .senior-review/review-rules.md (appended at the end)
  */
-export function buildReviewPrompt(customRules?: string | null): string {
-  let prompt = DEFAULT_REVIEW_PROMPT;
+export function buildReviewPrompt(
+  autoReviewRules?: string | null,
+  customRules?: string | null,
+): string {
+  const reviewSection = autoReviewRules?.trim() || DEFAULT_AUTO_REVIEW_RULES;
+  let prompt = `${PROMPT_PREFIX}\n\n${reviewSection}\n\n${PROMPT_SUFFIX}`;
   if (customRules) {
     prompt += `\n\n## Additional project-specific rules\n\n${customRules}`;
   }

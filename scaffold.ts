@@ -3,96 +3,66 @@
  *
  * Contains the actual default prompts used by the extension so users
  * can see and customise exactly what the reviewer sees.
+ *
+ * The default review rules live in default-review-rules.md (plain markdown,
+ * no code). scaffold.ts reads that file at import time so the content is
+ * available as SCAFFOLD_REVIEW_RULES for copying into the user's config dir.
  */
 
-import { DEFAULT_REVIEW_PROMPT } from "./prompt";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { DEFAULT_AUTO_REVIEW_RULES } from "./prompt";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// ── auto-review.md ───────────────────────────────────
+// The review criteria: what to look for and what to skip.
+// This is the ONLY part of the review prompt that users override directly.
+// The surrounding prompt (tools, budget, workflow, response format) is always
+// included automatically and cannot be changed.
+
+export const SCAFFOLD_AUTO_REVIEW = `${DEFAULT_AUTO_REVIEW_RULES}
+`;
 
 // ── review-rules.md ──────────────────────────────────
-// Shows the full default review prompt so users know what's built-in,
-// then a section for project-specific additions.
+// Loaded from default-review-rules.md — pure review criteria, no operational instructions.
+// The markdown file is the single source of truth; scaffold copies it to the user's config dir.
 
-export const SCAFFOLD_REVIEW_RULES = `# Review rules
-
-## Default review prompt (built-in)
-
-The following is the full default prompt sent to the reviewer model.
-You do **not** need to repeat it — it is always included automatically.
-This is here so you can see exactly what the reviewer is told, and
-override or extend it below.
-
-<details>
-<summary>Click to expand default prompt</summary>
-
-${DEFAULT_REVIEW_PROMPT}
-
-</details>
-
----
-
-## Project-specific rules (customise below)
-
-Everything below this line is **appended** to the default prompt above.
-Add your project's architecture rules, conventions, and constraints here.
-
-### Architecture
-
-- All API routes must go through the middleware chain
-- Database access only via the repository layer, never direct queries
-- No business logic in controllers — delegate to services
-
-### Code standards
-
-- All public functions must have JSDoc comments
-- No \`console.log\` in production code — use the logger
-- All API endpoints must validate input with zod schemas
-
-### Security
-
-- No secrets in code — use environment variables
-- All user input must be sanitized before database queries
-- Authentication required on all non-public routes
-`;
+let _scaffoldReviewRules: string;
+try {
+  _scaffoldReviewRules = readFileSync(join(__dirname, "default-review-rules.md"), "utf8");
+} catch (err: any) {
+  console.error(
+    `[senior-review] Failed to read default-review-rules.md: ${err?.message ?? err}. ` +
+    `Scaffold will create an empty review-rules.md. ` +
+    `Expected at: ${join(__dirname, "default-review-rules.md")}`,
+  );
+  _scaffoldReviewRules = "";
+}
+export const SCAFFOLD_REVIEW_RULES: string = _scaffoldReviewRules;
 
 // ── roundup.md ───────────────────────────────────────
 
-export const SCAFFOLD_ROUNDUP_RULES = `# Roundup review rules
-
-The roundup review runs after mini-review loops reach LGTM.
-It's a "zoom out" architecture review gated by heuristics + LLM judge.
-
-The default roundup prompt covers:
-- Architecture coherence & module coupling
-- Cross-file consistency (naming, patterns, types)
-- Integration completeness
-- Accumulated tech debt (TODO/FIXME, dead code)
-- Documentation accuracy
-
-Add project-specific roundup rules below. These are **appended** to the
-built-in roundup prompt.
-
----
-
-## Project-specific roundup rules
-
-### Architecture
+export const SCAFFOLD_ROUNDUP_RULES = `## Architecture
 
 - Verify the module dependency graph has no unexpected cycles
 - Check that layering is respected (e.g. UI → Service → Repository → Database)
 - Flag any god-objects or god-modules that accumulated too many responsibilities
 
-### Cross-cutting concerns
+## Cross-cutting concerns
 
 - Error handling strategy consistent across all modules
 - Logging follows the same patterns everywhere
 - Configuration accessed the same way in all files
 
-### Technical debt
+## Technical debt
 
 - Flag any TODO/FIXME/HACK comments that were added
 - Identify code that was clearly written in haste during fix loops
 - Check for dead code or unused imports that accumulated
 
-### Documentation
+## Documentation
 
 - README still accurate after all changes
 - Architecture docs reflect current state

@@ -208,11 +208,10 @@ describe("parseSettings", () => {
     expect(errors).toEqual([]);
   });
 
-  it("parseSettings_EmptyCancelShortcut_RejectsWithError", () => {
+  it("parseSettings_EmptyCancelShortcut_AcceptsAsNoShortcut", () => {
     const { settings, errors } = parseSettings({ cancelShortcut: "" });
-    expect(settings.cancelShortcut).toBe(DEFAULT_SETTINGS.cancelShortcut);
-    expect(errors.length).toBe(1);
-    expect(errors[0]).toContain("cancelShortcut");
+    expect(settings.cancelShortcut).toBe("");
+    expect(errors.length).toBe(0);
   });
 
   it("parseSettings_NonStringCancelShortcut_RejectsWithError", () => {

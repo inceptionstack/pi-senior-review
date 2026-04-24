@@ -16,7 +16,8 @@
     "agent"
   ],
   "files": [
-    "index.ts",
+    "*.ts",
+    "default-review-rules.md",
     "LICENSE",
     "README.md"
   ],

@@ -173,11 +173,12 @@ export function parseSettings(parsed: Record<string, unknown>): {
   }
 
   if ("cancelShortcut" in parsed) {
-    if (typeof parsed.cancelShortcut === "string" && parsed.cancelShortcut.trim()) {
+    if (typeof parsed.cancelShortcut === "string") {
+      // Empty string is valid — means "no shortcut" (use /cancel-review command instead)
       settings.cancelShortcut = parsed.cancelShortcut.trim();
     } else {
       errors.push(
-        `[senior-review] "cancelShortcut" must be a non-empty string key id (got ${JSON.stringify(parsed.cancelShortcut)}). Using default: ${DEFAULT_SETTINGS.cancelShortcut}.`,
+        `[senior-review] "cancelShortcut" must be a string key id (got ${JSON.stringify(parsed.cancelShortcut)}). Using default: ${DEFAULT_SETTINGS.cancelShortcut}.`,
       );
     }
   }
@@ -261,5 +262,15 @@ export function loadShortcutSettingsSync(cwd: string): ShortcutSettings {
  */
 export async function loadReviewRules(cwd: string): Promise<string | null> {
   const content = await readConfigFile(cwd, "review-rules.md");
+  return content?.trim() || null;
+}
+
+/**
+ * Load .senior-review/auto-review.md — overrides the "what to review / what not to report"
+ * section of the review prompt. Returns null if not found (uses built-in defaults).
+ * Tries cwd/.senior-review/ first, then ~/.pi/.senior-review/.
+ */
+export async function loadAutoReviewRules(cwd: string): Promise<string | null> {
+  const content = await readConfigFile(cwd, "auto-review.md");
   return content?.trim() || null;
 }

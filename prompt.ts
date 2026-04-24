@@ -13,11 +13,13 @@
 
 // ── Part 1: Prefix (always included, not user-editable) ──
 
-export const PROMPT_PREFIX = `You are a senior code reviewer. You already have the full content of every changed file inline below, plus the git diff. You do NOT need to re-read the changed files with tools — they are right here.
+export const PROMPT_PREFIX = `You are a senior code reviewer. You will review files that were recently changed. For each file, you are given its full path, the git diff for that file, and related commit messages.
 
-## Tools (use sparingly)
+**You MUST read each file yourself** using the read(path) tool to see the full current contents. The diffs below show what changed, but you need the full file to understand context.
 
-- read(path) — read OTHER files (not the changed ones, they are inline)
+## Tools
+
+- read(path) — read a file (USE THIS to read each reviewed file and any related files)
 - bash(command) — run commands like grep/find/test
 - grep, find, ls — for exploration
 
@@ -26,18 +28,14 @@ Do NOT output XML tags like <bash> or <read_file>. Use real function calls.
 
 ## Budget: 15 tool calls per reviewed file
 
-You have a budget of **15 tool calls per file** being reviewed. For example, if 5 files are under review you may use up to 75 tool calls total. Use tools when something is genuinely unclear from the inline content — e.g.:
-- A function from another file is called and you need to see its signature
-- You need to verify a test exists for a non-trivial change
-- A pattern claim ("this breaks consistency with X") requires seeing X
-
-Do NOT explore the codebase just to be thorough. The inline content is the source of truth.
+You have a budget of **15 tool calls per file** being reviewed. For example, if 5 files are under review you may use up to 75 tool calls total.
 
 ## Workflow
 
-1. Read the inline file contents and diff.
-2. Use tools for targeted verification (budget: 15 per file).
-3. Write your review. No more tool calls after that.`;
+1. Read each changed file with read(path) to see its full current contents.
+2. Cross-reference with the per-file diffs and commit messages provided below.
+3. Use additional tool calls for targeted verification (related files, tests, etc.).
+4. Write your review. No more tool calls after that.`;
 
 // ── Part 2: Default auto-review rules (user can override via auto-review.md) ──
 
@@ -105,15 +103,20 @@ export const DEFAULT_REVIEW_PROMPT = `${PROMPT_PREFIX}\n\n${DEFAULT_AUTO_REVIEW_
  *
  * @param autoReviewRules — contents of .senior-review/auto-review.md, or null to use defaults
  * @param customRules     — contents of .senior-review/review-rules.md (appended at the end)
+ * @param userRequest     — the last user message that triggered the agent (what the user asked)
  */
 export function buildReviewPrompt(
   autoReviewRules?: string | null,
   customRules?: string | null,
+  userRequest?: string | null,
 ): string {
   const reviewSection = autoReviewRules?.trim() || DEFAULT_AUTO_REVIEW_RULES;
   let prompt = `${PROMPT_PREFIX}\n\n${reviewSection}\n\n${PROMPT_SUFFIX}`;
   if (customRules) {
     prompt += `\n\n## Additional project-specific rules\n\n${customRules}`;
+  }
+  if (userRequest) {
+    prompt += `\n\n## User request (what the agent was asked to do)\n\n> ${userRequest.split("\n").join("\n> ")}`;
   }
   return prompt;
 }

@@ -18,9 +18,9 @@ describe("formatReviewContext", () => {
     const result = formatReviewContext(makeContext());
     expect(result).toContain("## Changed files (1)");
     expect(result).toContain("- foo.ts");
-    expect(result).toContain("## Full file contents");
+    expect(result).toContain("## Files to review");
     expect(result).toContain("### foo.ts");
-    expect(result).toContain("const x = 1;");
+    expect(result).toContain("**Full path:**");
     expect(result).toContain("## Git diff");
     expect(result).toContain("## Project file tree");
   });

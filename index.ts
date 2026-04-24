@@ -94,6 +94,7 @@ export default function (pi: ExtensionAPI) {
   const modifiedFiles = new Set<string>();
   const detectedGitRoots = new Set<string>(); // git repos discovered from file paths or bash git commands
   const pendingArgs = new Map<string, { name: string; input: any }>();
+  let lastUserMessage: string | null = null; // captured from before_agent_start
 
   // Load shortcut config synchronously at init (before session_start)
   // so registerShortcut() uses the configured keys.
@@ -348,7 +349,7 @@ export default function (pi: ExtensionAPI) {
               if (best) {
                 updateStatus(ctx, "analyzing…");
                 const { onActivity, onToolCall } = startReviewWidget(ctx, best.files);
-                const prompt = `${buildReviewPrompt(autoReviewRules, customRules)}\n\n---\n\n${best.content}`;
+                const prompt = `${buildReviewPrompt(autoReviewRules, customRules, lastUserMessage)}\n\n---\n\n${best.content}`;
                 log("prompt length:", prompt.length);
                 const result = await runReviewSession(
                   prompt,
@@ -440,6 +441,12 @@ export default function (pi: ExtensionAPI) {
             .slice(0, 2000)
         : undefined,
     });
+  });
+
+  pi.on("before_agent_start", async (event) => {
+    if (event.prompt) {
+      lastUserMessage = event.prompt;
+    }
   });
 
   pi.on("agent_start", async (_event, ctx) => {
@@ -553,7 +560,7 @@ export default function (pi: ExtensionAPI) {
       log(
         `Reviewing ${best.files.length} files via ${best.label || "git diff"}: ${best.files.join(", ")}`,
       );
-      let prompt = `${buildReviewPrompt(autoReviewRules, customRules)}\n\n---\n\n${best.content}`;
+      let prompt = `${buildReviewPrompt(autoReviewRules, customRules, lastUserMessage)}\n\n---\n\n${best.content}`;
       let result;
       try {
         result = await runReviewSession(
@@ -574,7 +581,7 @@ export default function (pi: ExtensionAPI) {
           return;
         }
         best = smallBest;
-        prompt = `${buildReviewPrompt(autoReviewRules, customRules)}\n\n---\n\n${best.content}`;
+        prompt = `${buildReviewPrompt(autoReviewRules, customRules, lastUserMessage)}\n\n---\n\n${best.content}`;
         result = await runReviewSession(
           prompt,
           buildReviewOptions(reviewAbort.signal, ctx.cwd, best.files, onActivity, onToolCall),
@@ -1042,7 +1049,7 @@ export default function (pi: ExtensionAPI) {
         const truncatedDiff = truncateDiff(diff, LARGE_LIMITS.maxDiffSize);
         const commitLabel = `last ${effectiveCount} commit${effectiveCount > 1 ? "s" : ""}`;
 
-        const prompt = `${buildReviewPrompt(autoReviewRules, customRules)}\n\n---\n\nReview the following git diff (${commitLabel}):\n\nCommits:\n${commitLog}\n\nDiff:\n\`\`\`diff\n${truncatedDiff}\n\`\`\``;
+        const prompt = `${buildReviewPrompt(autoReviewRules, customRules, lastUserMessage)}\n\n---\n\nReview the following git diff (${commitLabel}):\n\nCommits:\n${commitLog}\n\nDiff:\n\`\`\`diff\n${truncatedDiff}\n\`\`\``;
         const { onActivity, onToolCall } = startReviewWidget(ctx, changedFiles);
         const result = await runReviewSession(
           prompt,

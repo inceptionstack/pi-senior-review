@@ -78,4 +78,21 @@ describe("buildReviewPrompt", () => {
     expect(PROMPT_SUFFIX).not.toContain("Correctness bugs");
     expect(PROMPT_SUFFIX).not.toContain("What NOT to report");
   });
+
+  it("buildReviewPrompt_WithUserRequest_IncludesUserMessage", () => {
+    const result = buildReviewPrompt(null, null, "Fix the login bug");
+    expect(result).toContain("## User request");
+    expect(result).toContain("Fix the login bug");
+  });
+
+  it("buildReviewPrompt_NullUserRequest_OmitsSection", () => {
+    const result = buildReviewPrompt(null, null, null);
+    expect(result).not.toContain("## User request");
+  });
+
+  it("buildReviewPrompt_MultilineUserRequest_BlockQuoted", () => {
+    const result = buildReviewPrompt(null, null, "Fix the bug\nAlso add tests");
+    expect(result).toContain("> Fix the bug");
+    expect(result).toContain("> Also add tests");
+  });
 });

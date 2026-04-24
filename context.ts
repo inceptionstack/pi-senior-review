@@ -17,7 +17,6 @@ import {
   buildChangeSummary,
   collectModifiedPaths,
   isBinaryPath,
-  MAX_NON_GIT_FILE_SIZE,
 } from "./changes";
 
 export interface ReviewContext {
@@ -212,9 +211,10 @@ export function formatReviewContext(ctx: ReviewContext, limits?: ContentSizeLimi
     parts.push(`- ${f}`);
   }
 
-  parts.push(`\n## Full file contents\n`);
-  for (const [file, content] of ctx.fileContents) {
-    parts.push(`### ${file}\n\`\`\`\n${content}\n\`\`\`\n`);
+  parts.push(`\n## Files to review\n`);
+  parts.push(`Read each file with read(path) to see its full contents, then review using the diff below.\n`);
+  for (const f of ctx.changedFiles) {
+    parts.push(`### ${f}\n**Full path:** \`${f}\`\n`);
   }
 
   parts.push(`## Git diff\n\`\`\`diff\n${truncateDiff(ctx.diff, maxDiff)}\n\`\`\`\n`);
@@ -340,25 +340,13 @@ async function buildRepoContext(
   const filteredFiles = ignorePatterns ? filterIgnored(files, ignorePatterns) : files;
   if (filteredFiles.length === 0) return null;
 
-  // Read full contents of each changed file
-  const { sections: fileSections } = await readChangedFiles(pi, filteredFiles, {
-    root,
-    newFiles: untrackedFiles,
-    onStatus,
-    limits: lim,
-  });
+  // Determine the diff range for per-file diffs
+  const diffRange = commitLabel ? ["HEAD~1", "HEAD"] : ["HEAD"];
 
-  // Re-run diff scoped to filtered files only (use correct range)
-  let scopedDiff = diff;
-  if (ignorePatterns && filteredFiles.length < files.length) {
-    const scopedArgs = commitLabel
-      ? ["diff", "HEAD~1", "HEAD", "--", ...filteredFiles]
-      : ["diff", "HEAD", "--", ...filteredFiles];
-    const scopedResult = await pi.exec("git", ["-C", root, ...scopedArgs], { timeout: 15000 });
-    if (scopedResult.code === 0 && scopedResult.stdout.trim()) {
-      scopedDiff = scopedResult.stdout.trim();
-    }
-  }
+  // Build per-file review context (path, diff, commits — reviewer reads files itself)
+  const perFileSections = await buildPerFileContext(
+    pi, root, filteredFiles, diffRange, untrackedFiles, lim, onStatus,
+  );
 
   log(
     "path1: root=",
@@ -367,25 +355,17 @@ async function buildRepoContext(
     diff.length,
     "files=",
     filteredFiles,
-    "fileSections=",
-    fileSections.length,
+    "perFileSections=",
+    perFileSections.length,
   );
-
-  // Get recent commit messages for context
-  const commitLogResult = await pi.exec("git", ["-C", root, "log", "--oneline", "-10"], {
-    timeout: 5000,
-  });
-  const commitLog = commitLogResult.code === 0 ? commitLogResult.stdout.trim() : "";
-  const commitSection = commitLog ? `## Recent commits\n\`\`\`\n${commitLog}\n\`\`\`\n\n` : "";
 
   const fileList = filteredFiles.map((f) => (untrackedFiles.has(f) ? `${f} (new)` : f)).join(", ");
 
   const text =
     `## Repo: ${root}${commitLabel}\n\n` +
     `Changed files: ${fileList}\n\n` +
-    commitSection +
-    `## Full file contents\n\n${fileSections.join("\n\n")}\n\n` +
-    `## Git diff\n\`\`\`diff\n${truncateDiff(scopedDiff, lim.maxDiffSize)}\n\`\`\``;
+    `## Files to review\n\nRead each file with read(path) to see its full contents, then review using the diff and commits below.\n\n` +
+    perFileSections.join("\n\n---\n\n");
 
   return { text, files: filteredFiles };
 }
@@ -408,6 +388,84 @@ async function listUntrackedFiles(pi: ExtensionAPI, root: string): Promise<strin
     timeout: 5000,
   });
   return result.code === 0 ? result.stdout.trim().split("\n").filter(Boolean) : [];
+}
+
+/** Get git diff for a single file. */
+async function getFileDiff(
+  pi: ExtensionAPI,
+  root: string,
+  file: string,
+  range: string[],
+): Promise<string> {
+  const result = await pi.exec("git", ["-C", root, "diff", ...range, "--", file], {
+    timeout: 10000,
+  });
+  return result.code === 0 ? result.stdout.trim() : "";
+}
+
+/** Get commit messages that touched a specific file (last 5). */
+async function getFileCommits(
+  pi: ExtensionAPI,
+  root: string,
+  file: string,
+): Promise<string> {
+  const result = await pi.exec(
+    "git",
+    ["-C", root, "log", "--oneline", "-5", "--", file],
+    { timeout: 5000 },
+  );
+  return result.code === 0 ? result.stdout.trim() : "";
+}
+
+/**
+ * Build per-file review context: path, diff, commits.
+ * The reviewer will read each file itself using tools.
+ */
+async function buildPerFileContext(
+  pi: ExtensionAPI,
+  root: string,
+  files: string[],
+  diffRange: string[],
+  untrackedFiles: Set<string>,
+  limits: ContentSizeLimits,
+  onStatus?: (msg: string) => void,
+): Promise<string[]> {
+  const sections: string[] = [];
+
+  for (const file of files) {
+    const fullPath = `${root}/${file}`;
+    onStatus?.(`gathering context for ${file}…`);
+
+    const isNew = untrackedFiles.has(file);
+    const newLabel = isNew ? " (new file)" : "";
+
+    // Get per-file diff
+    let fileDiff = "";
+    if (!isNew) {
+      fileDiff = await getFileDiff(pi, root, file, diffRange);
+    }
+
+    // Get commit messages for this file
+    const commits = await getFileCommits(pi, root, file);
+
+    let section = `### ${fullPath}${newLabel}\n`;
+    section += `**Full path:** \`${fullPath}\`\n`;
+
+    if (commits) {
+      section += `\n**Recent commits:**\n\`\`\`\n${commits}\n\`\`\`\n`;
+    }
+
+    if (fileDiff) {
+      const truncated = truncateDiff(fileDiff, limits.maxDiffSize);
+      section += `\n**Diff:**\n\`\`\`diff\n${truncated}\n\`\`\`\n`;
+    } else if (isNew) {
+      section += `\n*New file — no diff available. Read the file to review its contents.*\n`;
+    }
+
+    sections.push(section);
+  }
+
+  return sections;
 }
 
 // ── Path 2: cwd as git repo (full buildReviewContext) ──
@@ -473,16 +531,14 @@ export async function getContentFromLastCommit(
 
     const truncated = truncateDiff(diff, lim.maxDiffSize);
 
-    const { sections: fileSections } = await readChangedFiles(pi, files, {
-      onStatus,
-      limits: lim,
-    });
-    const fileSection =
-      fileSections.length > 0 ? `\n\n## Full file contents\n\n${fileSections.join("\n\n")}` : "";
+    // Build per-file sections with paths (reviewer reads files itself)
+    const fileSection = files
+      .map((f) => `### ${f}\n**Full path:** \`${f}\``)
+      .join("\n\n");
 
     log("path3: last commit, files=", files);
     return {
-      content: `## Recent commits\n\`\`\`\n${commitLog}\n\`\`\`${fileSection}\n\n## Diff\n\`\`\`diff\n${truncated}\n\`\`\`${summarySection}`,
+      content: `## Recent commits\n\`\`\`\n${commitLog}\n\`\`\`\n\n## Files to review\n\nRead each file with read(path) to see its full contents.\n\n${fileSection}\n\n## Diff\n\`\`\`diff\n${truncated}\n\`\`\`${summarySection}`,
       label: "last commit",
       files,
     };
@@ -504,37 +560,32 @@ export async function getContentFromToolCalls(
   if (agentToolCalls.length === 0) return null;
 
   const candidatePaths = collectModifiedPaths(agentToolCalls);
-  const parts: string[] = [];
   const reviewedFiles: string[] = [];
 
   for (const filePath of candidatePaths) {
     if (isBinaryPath(filePath)) continue;
 
-    onStatus?.(`reading ${filePath}…`);
+    onStatus?.(`checking ${filePath}…`);
     try {
-      const result = await pi.exec("head", ["-c", String(MAX_NON_GIT_FILE_SIZE + 100), filePath], {
-        timeout: 5000,
-      });
-      if (result.code !== 0 || !result.stdout) continue;
-      if (result.stdout.includes("\0")) continue;
-      if (result.stdout.length > MAX_NON_GIT_FILE_SIZE) continue;
-
+      // Just verify the file exists and is readable
+      const result = await pi.exec("test", ["-r", filePath], { timeout: 5000 });
+      if (result.code !== 0) continue;
       reviewedFiles.push(filePath);
-      const fileContent =
-        result.stdout.length > lim.maxFileSize
-          ? result.stdout.slice(0, lim.maxFileSize) +
-            `\n\n... (truncated, ${result.stdout.length} total chars)`
-          : result.stdout;
-      parts.push(`### ${filePath}\n\`\`\`\n${fileContent}\n\`\`\``);
     } catch {
       // skip unreadable files
     }
   }
 
-  if (parts.length === 0 && !changeSummary.trim()) return null;
+  if (reviewedFiles.length === 0 && !changeSummary.trim()) return null;
+
+  const fileSection = reviewedFiles
+    .map((f) => `### ${f}\n**Full path:** \`${f}\``)
+    .join("\n\n");
 
   const content = [
-    parts.length > 0 ? `## Files (read directly, no git)\n\n${parts.join("\n\n")}` : "",
+    reviewedFiles.length > 0
+      ? `## Files to review (no git)\n\nRead each file with read(path) to see its full contents.\n\n${fileSection}`
+      : "",
     changeSummary.trim() ? `## Tool call summary\n\n${changeSummary}` : "",
   ]
     .filter(Boolean)

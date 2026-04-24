@@ -1,11 +1,9 @@
 /**
  * context.ts — Build rich review context
  *
- * Gathers: file tree, changed files list, full file contents, git diff.
+ * Gathers: file tree, changed files list, per-file diffs, per-file commits.
+ * The reviewer reads full file contents itself via tools.
  * Falls back gracefully when git is unavailable.
- *
- * All size limits are threaded explicitly through function parameters —
- * no module-level mutable state.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -49,68 +47,6 @@ export const FALLBACK_LIMITS: ContentSizeLimits = {
   maxTotalContentSize: 60_000,
   maxDiffSize: 30_000,
 };
-
-export interface ReadFilesResult {
-  sections: string[];
-  contents: Map<string, string>;
-  totalSize: number;
-}
-
-/**
- * Read changed files and return formatted sections + raw contents.
- * Shared by all review paths to avoid duplication.
- */
-export async function readChangedFiles(
-  pi: ExtensionAPI,
-  files: string[],
-  opts?: {
-    root?: string;
-    newFiles?: Set<string>;
-    onStatus?: (msg: string) => void;
-    limits?: ContentSizeLimits;
-  },
-): Promise<ReadFilesResult> {
-  const sections: string[] = [];
-  const contents = new Map<string, string>();
-  let totalSize = 0;
-  const root = opts?.root;
-  const limits = opts?.limits ?? LARGE_LIMITS;
-
-  for (const file of files) {
-    if (totalSize >= limits.maxTotalContentSize) {
-      sections.push(`### ${file}\n(skipped — total content size limit reached)`);
-      contents.set(file, "(skipped — total content size limit reached)");
-      continue;
-    }
-
-    const fullPath = root ? `${root}/${file}` : file;
-    opts?.onStatus?.(`reading ${fullPath}…`);
-
-    const readResult = await pi.exec("head", ["-c", String(limits.maxFileSize + 100), fullPath], {
-      timeout: 5000,
-    });
-
-    if (readResult.code !== 0 || !readResult.stdout) {
-      sections.push(`### ${file}\n(could not read — file may be deleted)`);
-      contents.set(file, "(could not read — file may be deleted)");
-      continue;
-    }
-
-    let content = readResult.stdout;
-    totalSize += content.length;
-
-    if (content.length > limits.maxFileSize) {
-      content =
-        content.slice(0, limits.maxFileSize) + `\n\n... (truncated, ${content.length} total chars)`;
-    }
-
-    const newLabel = opts?.newFiles?.has(file) ? " (new file)" : "";
-    sections.push(`### ${file}${newLabel}\n\`\`\`\n${content}\n\`\`\``);
-    contents.set(file, content);
-  }
-
-  return { sections, contents, totalSize };
-}
 
 /**
  * Build full review context from the current working directory.
@@ -415,7 +351,7 @@ async function getFileCommits(
  * Build per-file review context: path, diff, commits.
  * The reviewer will read each file itself using tools.
  */
-async function buildPerFileContext(
+export async function buildPerFileContext(
   pi: ExtensionAPI,
   root: string,
   files: string[],

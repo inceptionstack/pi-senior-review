@@ -25,7 +25,8 @@ Agent makes file changes (write, edit, bash)
          │
          ▼ Spawns a fresh pi instance (in-memory, isolated)
          │
-         ▼ Sends git diff + full file contents to reviewer
+         ▼ Sends per-file diffs + commit messages to reviewer
+         │  Reviewer reads each file itself via read(path) tool
          │
     ┌────┴────┐
     │         │
@@ -68,6 +69,8 @@ Config files are loaded from two locations. **Local takes precedence over global
 
 All config files are optional. If missing, sensible defaults are used.
 
+Use `/scaffold-review-files` to generate config templates.
+
 ### `.senior-review/settings.json`
 
 ```json
@@ -94,28 +97,36 @@ All config files are optional. If missing, sensible defaults are used.
 
 ### `.senior-review/review-rules.md`
 
-Custom review rules appended to the reviewer prompt:
+Custom review rules appended to the reviewer prompt. Only include review criteria — the surrounding prompt (tools, budget, workflow, response format) is handled automatically.
 
 ```markdown
-# Project review rules
+## Architecture
 
 - All API endpoints must validate input with zod schemas
 - Database queries must use parameterized statements
-- React components must have PropTypes or TypeScript props interface
+
+## Security
+
 - No console.log in production code (use logger)
+- No secrets in code — use environment variables
 ```
+
+Use `/add-review-rule <text>` to quickly prepend rules, or `/senior-edit-review-rules` to open the file in pi's editor.
+
+### `.senior-review/auto-review.md`
+
+Override the "what to review / what not to report" section of the review prompt. The surrounding prompt (tools, budget, workflow, response format) is always included automatically.
 
 ### `.senior-review/roundup.md`
 
 Custom rules for the roundup architecture review:
 
 ```markdown
-# Roundup review rules
+## Architecture
 
 - Verify module dependency graph has no cycles
 - Check error handling is consistent across all modules
 - Flag any TODO/FIXME comments added during fix loops
-- Verify README and architecture docs still accurate
 ```
 
 ### `.senior-review/ignore`
@@ -141,19 +152,30 @@ src/vendor/**
 - `senior-review reviewing… [2/100] model-name (/cancel-review)` — reviewer running
 - `senior-review off (Alt+R toggle)` — disabled
 
+### Review progress widget
+
+During reviews, an animated widget appears below the editor showing:
+- ASCII art senior dev with reading glasses
+- File list with active file highlighted and per-file tool usage counts
+- Elapsed time, model name, loop count
+
 ### Commands
 
-| Command          | Description                                         |
-| ---------------- | --------------------------------------------------- |
-| `/review`        | Toggle senior-review on/off                           |
-| `/review N`      | Review the last N commits                           |
-| `/cancel-review` | Cancel an in-progress review (works during roundup) |
+| Command                       | Description                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------- |
+| `/review`                     | Toggle senior-review on/off                                                     |
+| `/review N`                   | Review the last N commits                                                       |
+| `/review-all`                 | Review all changes (pending diff → last commit → all files in cwd)              |
+| `/cancel-review`              | Cancel an in-progress review (works during roundup)                             |
+| `/scaffold-review-files`      | Create `.senior-review/` config templates in a git repo                         |
+| `/senior-edit-review-rules`   | Edit `.senior-review/review-rules.md` in pi's built-in editor                   |
+| `/add-review-rule <text>`     | Prepend a custom rule to `.senior-review/review-rules.md`                       |
 
 ### Keyboard shortcuts
 
 | Key                | Default  | Configurable     | Action                                              |
 | ------------------ | -------- | ---------------- | --------------------------------------------------- |
-| Toggle shortcut    | `alt+r`  | `toggleShortcut` | Toggle senior-review on/off                           |
+| Toggle shortcut    | `alt+r`  | `toggleShortcut` | Toggle senior-review on/off                         |
 | Cancel shortcut    | _(none)_ | `cancelShortcut` | Cancel in-progress review                           |
 | `ctrl+alt+r`       | built-in | no               | Cancel review (fallback, terminals that support it) |
 | `ctrl+alt+shift+r` | built-in | no               | Full reset: cancel, reset loops, clear all state    |

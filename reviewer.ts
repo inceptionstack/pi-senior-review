@@ -1,14 +1,13 @@
 /**
- * reviewer.ts — Review session with full context
+ * reviewer.ts — Review session runner
  *
  * The reviewer gets:
- * - Full git diff
- * - List of changed files
- * - Full contents of each changed file
- * - Project file tree
- * - Read-only tools to explore the codebase further
+ * - Per-file git diffs and recent commit messages
+ * - Full paths of changed files
+ * - Read-only tools to read files and explore the codebase
  * - Live status updates shown in the main pi status bar
  *
+ * The reviewer reads each file itself via read(path) tool calls.
  * Uses the standardized file logger for all diagnostic output.
  */
 

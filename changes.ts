@@ -245,10 +245,6 @@ export function isNonFileModifyingCommand(command: string): boolean {
   return parts.every(isNonModifyingPart);
 }
 
-/** @deprecated use isNonFileModifyingCommand */
-export function isPureGitOperation(command: string): boolean {
-  return isNonFileModifyingCommand(command);
-}
 
 /**
  * Check if any tool calls include file modifications.

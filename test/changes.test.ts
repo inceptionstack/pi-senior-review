@@ -6,7 +6,6 @@ import {
   isBinaryPath,
   extractPathsFromBashCommand,
   collectModifiedPaths,
-  isPureGitOperation,
   isNonFileModifyingCommand,
   isFormatterCommand,
   isFormattingOnlyTurn,
@@ -159,59 +158,59 @@ describe("collectModifiedPaths", () => {
   });
 });
 
-describe("isPureGitOperation", () => {
-  it("isPureGitOperation_GitPush_ReturnsTrue", () => {
-    expect(isPureGitOperation("git push origin main")).toBe(true);
+describe("isNonFileModifyingCommand", () => {
+  it("isNonFileModifyingCommand_GitPush_ReturnsTrue", () => {
+    expect(isNonFileModifyingCommand("git push origin main")).toBe(true);
   });
 
-  it("isPureGitOperation_GitCommit_ReturnsTrue", () => {
-    expect(isPureGitOperation('git commit -m "fix: bug"')).toBe(true);
+  it("isNonFileModifyingCommand_GitCommit_ReturnsTrue", () => {
+    expect(isNonFileModifyingCommand('git commit -m "fix: bug"')).toBe(true);
   });
 
-  it("isPureGitOperation_GitAddCommitPush_ReturnsTrue", () => {
-    expect(isPureGitOperation('git add -A && git commit -m "msg" && git push')).toBe(true);
+  it("isNonFileModifyingCommand_GitAddCommitPush_ReturnsTrue", () => {
+    expect(isNonFileModifyingCommand('git add -A && git commit -m "msg" && git push')).toBe(true);
   });
 
-  it("isPureGitOperation_CdThenGitOps_ReturnsTrue", () => {
-    expect(isPureGitOperation("cd /tmp/repo && git log --oneline")).toBe(true);
+  it("isNonFileModifyingCommand_CdThenGitOps_ReturnsTrue", () => {
+    expect(isNonFileModifyingCommand("cd /tmp/repo && git log --oneline")).toBe(true);
   });
 
-  it("isPureGitOperation_GitStatusDiff_ReturnsTrue", () => {
-    expect(isPureGitOperation("git status && git diff")).toBe(true);
+  it("isNonFileModifyingCommand_GitStatusDiff_ReturnsTrue", () => {
+    expect(isNonFileModifyingCommand("git status && git diff")).toBe(true);
   });
 
-  it("isPureGitOperation_NonGitCommand_ReturnsFalse", () => {
-    expect(isPureGitOperation("npm test")).toBe(false);
+  it("isNonFileModifyingCommand_NonGitCommand_ReturnsFalse", () => {
+    expect(isNonFileModifyingCommand("npm test")).toBe(false);
   });
 
-  it("isPureGitOperation_MixedGitAndShell_ReturnsFalse", () => {
-    expect(isPureGitOperation("git status && rm -rf /tmp/foo")).toBe(false);
+  it("isNonFileModifyingCommand_MixedGitAndShell_ReturnsFalse", () => {
+    expect(isNonFileModifyingCommand("git status && rm -rf /tmp/foo")).toBe(false);
   });
 
-  it("isPureGitOperation_GitCheckout_ReturnsFalse", () => {
+  it("isNonFileModifyingCommand_GitCheckout_ReturnsFalse", () => {
     // checkout modifies working tree
-    expect(isPureGitOperation("git checkout main")).toBe(false);
+    expect(isNonFileModifyingCommand("git checkout main")).toBe(false);
   });
 
-  it("isPureGitOperation_GitMerge_ReturnsFalse", () => {
-    expect(isPureGitOperation("git merge feature")).toBe(false);
+  it("isNonFileModifyingCommand_GitMerge_ReturnsFalse", () => {
+    expect(isNonFileModifyingCommand("git merge feature")).toBe(false);
   });
 
-  it("isPureGitOperation_GitReset_ReturnsFalse", () => {
-    expect(isPureGitOperation("git reset --hard")).toBe(false);
+  it("isNonFileModifyingCommand_GitReset_ReturnsFalse", () => {
+    expect(isNonFileModifyingCommand("git reset --hard")).toBe(false);
   });
 
-  it("isPureGitOperation_EmptyString_ReturnsFalse", () => {
-    expect(isPureGitOperation("")).toBe(false);
+  it("isNonFileModifyingCommand_EmptyString_ReturnsFalse", () => {
+    expect(isNonFileModifyingCommand("")).toBe(false);
   });
 
-  it("isPureGitOperation_EchoThenGit_ReturnsFalse", () => {
+  it("isNonFileModifyingCommand_EchoThenGit_ReturnsFalse", () => {
     // echo can redirect to files, so anything with echo is not pure git
-    expect(isPureGitOperation('echo "starting" && git push')).toBe(false);
+    expect(isNonFileModifyingCommand('echo "starting" && git push')).toBe(false);
   });
 
-  it("isPureGitOperation_GitWithCFlag_Recognized", () => {
-    expect(isPureGitOperation("git -C /tmp/repo push origin main")).toBe(true);
+  it("isNonFileModifyingCommand_GitWithCFlag_Recognized", () => {
+    expect(isNonFileModifyingCommand("git -C /tmp/repo push origin main")).toBe(true);
   });
 });
 

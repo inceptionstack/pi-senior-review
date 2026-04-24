@@ -26,9 +26,9 @@ export const PROMPT_PREFIX = `You are a senior code reviewer. You will review fi
 You do NOT have write or edit tools.
 Do NOT output XML tags like <bash> or <read_file>. Use real function calls.
 
-## Budget: 15 tool calls per reviewed file
+## Budget: 30 tool calls per reviewed file
 
-You have a budget of **15 tool calls per file** being reviewed. For example, if 5 files are under review you may use up to 75 tool calls total.
+You have a budget of **30 tool calls per file** being reviewed. For example, if 5 files are under review you may use up to 150 tool calls total.
 
 ## Workflow
 

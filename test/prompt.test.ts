@@ -51,7 +51,7 @@ describe("buildReviewPrompt", () => {
   });
 
   it("buildReviewPrompt_DefaultPromptContainsToolBudget", () => {
-    expect(DEFAULT_REVIEW_PROMPT).toContain("15 tool calls per file");
+    expect(DEFAULT_REVIEW_PROMPT).toContain("30 tool calls per file");
   });
 
   it("buildReviewPrompt_DefaultPromptContainsCaughtBugsMantra", () => {

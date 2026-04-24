@@ -204,6 +204,7 @@ export interface RoundupOptions {
   customRules: string | null;
   sessionChangeSummary: string;
   onActivity?: (description: string) => void;
+  onToolCall?: (toolName: string, targetPath: string | null) => void;
 }
 
 /**
@@ -218,6 +219,7 @@ export async function runRoundupReview(opts: RoundupOptions): Promise<boolean> {
     cwd: opts.cwd,
     model: opts.model,
     onActivity: opts.onActivity,
+    onToolCall: opts.onToolCall,
   });
 
   if (result.isLgtm) {

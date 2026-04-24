@@ -39,6 +39,33 @@ const SENIOR_FRAMES = [
   ],
 ];
 
+const ROUNDUP_FRAMES = [
+  [
+    `    ┌─────────┐ `,
+    `    │  ◉   ◉  │ `,
+    `    │ ═══════ │ `,
+    `    │    ▽    │ `,
+    `    │  ╰───╯  │ `,
+    `    └────┬────┘ `,
+    `    ╭────┴────╮ `,
+    `   ╱│ROUNDUP │╲`,
+    `  ╱ │ REVIEW  │ ╲`,
+    `    ╰─────────╯ `,
+  ],
+  [
+    `    ┌─────────┐ `,
+    `    │  ◎   ◎  │ `,
+    `    │ ═══════ │ `,
+    `    │    ▽    │ `,
+    `    │  ╰───╯  │ `,
+    `    └────┬────┘ `,
+    `    ╭────┴────╮ `,
+    `   ╱│ROUNDUP │╲`,
+    `  ╱ │ REVIEW  │ ╲`,
+    `    ╰─────────╯ `,
+  ],
+];
+
 const SPINNER_FRAMES = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"];
 
 // ── Types ────────────────────────────────────────────
@@ -53,14 +80,24 @@ export interface ReviewDisplayState {
   startTime: number;
   /** Tool usage count per file (keyed by file path from files[]) */
   toolCounts: Map<string, number>;
+  /** Last tool description per file */
+  lastToolDesc: Map<string, string>;
   /** Total tool calls across all files */
   totalToolCalls: number;
+  /** Whether this is a roundup review */
+  isRoundup: boolean;
+  /** Architecture diagram lines (for roundup) */
+  archDiagram: string[] | null;
+  /** Currently highlighted module in the architecture diagram */
+  archActiveModule: string | null;
 }
 
 export interface ReviewDisplayHandle {
   update(patch: Partial<ReviewDisplayState>): void;
   /** Record a tool call, associating it with the best-matching file. */
   recordToolCall(toolName: string, targetPath: string | null): void;
+  /** Switch to roundup mode with different ASCII art. */
+  setRoundupMode(archDiagram?: string[]): void;
   stop(): void;
 }
 
@@ -83,6 +120,121 @@ function findMatchingFile(files: string[], path: string): string | null {
   return null;
 }
 
+/**
+ * Infer which architecture module a file path belongs to.
+ * Uses the first meaningful directory component.
+ */
+function inferModuleFromPath(filePath: string): string | null {
+  const parts = filePath.replace(/^\/+/, "").split("/");
+  // Skip common root dirs
+  const skip = new Set(["src", "lib", "app", "packages", "."]);
+  for (const p of parts.slice(0, -1)) {
+    if (!skip.has(p) && p !== "") return p;
+  }
+  // Fallback: use the filename without extension
+  const last = parts[parts.length - 1];
+  if (last) return last.replace(/\.[^.]+$/, "");
+  return null;
+}
+
+/**
+ * Format a short tool description for display next to file counts.
+ */
+function formatToolDesc(toolName: string, targetPath: string | null): string {
+  if (toolName === "read" && targetPath) {
+    const short = targetPath.split("/").pop() ?? targetPath;
+    return `read ${short}`;
+  }
+  if (toolName === "bash") {
+    return `$ ${(targetPath ?? "").slice(0, 30)}`;
+  }
+  if (toolName === "grep" || toolName === "find" || toolName === "ls") {
+    return `${toolName} ${(targetPath ?? "").slice(0, 25)}`;
+  }
+  return `${toolName}…`;
+}
+
+// ── Architecture diagram builder ─────────────────────
+
+/**
+ * Build an ASCII architecture diagram from a list of modules.
+ * Returns lines of text. Modules are shown as boxes in a grid.
+ */
+export function buildArchDiagram(
+  modules: string[],
+  activeModule: string | null,
+  theme: {
+    fg: (color: string, text: string) => string;
+    bold: (text: string) => string;
+  },
+): string[] {
+  if (modules.length === 0) return [];
+
+  const lines: string[] = [];
+  const boxWidth = 16;
+  const cols = Math.min(modules.length, 4);
+
+  lines.push(theme.fg("dim", "Architecture:"));
+
+  for (let i = 0; i < modules.length; i += cols) {
+    const row = modules.slice(i, i + cols);
+    // Top border
+    const topLine = row
+      .map((m) => {
+        const isActive = m === activeModule;
+        const border = isActive ? "┏" + "━".repeat(boxWidth) + "┓" : "┌" + "─".repeat(boxWidth) + "┐";
+        return isActive ? theme.fg("warning", border) : theme.fg("dim", border);
+      })
+      .join(" ");
+    lines.push(topLine);
+
+    // Module name
+    const nameLine = row
+      .map((m) => {
+        const isActive = m === activeModule;
+        const label = m.length > boxWidth - 2 ? m.slice(0, boxWidth - 3) + "…" : m;
+        const padded = label.padStart(Math.floor((boxWidth - label.length) / 2) + label.length).padEnd(boxWidth);
+        if (isActive) {
+          return theme.fg("warning", "┃") + theme.fg("warning", theme.bold(padded)) + theme.fg("warning", "┃");
+        }
+        return theme.fg("dim", "│") + theme.fg("muted", padded) + theme.fg("dim", "│");
+      })
+      .join(" ");
+    lines.push(nameLine);
+
+    // Bottom border
+    const botLine = row
+      .map((m) => {
+        const isActive = m === activeModule;
+        const border = isActive ? "┗" + "━".repeat(boxWidth) + "┛" : "└" + "─".repeat(boxWidth) + "┘";
+        return isActive ? theme.fg("warning", border) : theme.fg("dim", border);
+      })
+      .join(" ");
+    lines.push(botLine);
+
+    // Connection arrows between rows
+    if (i + cols < modules.length) {
+      const arrowLine = row.map(() => " ".repeat(Math.floor(boxWidth / 2)) + theme.fg("dim", "│") + " ".repeat(Math.ceil(boxWidth / 2))).join(" ");
+      lines.push(arrowLine);
+    }
+  }
+
+  return lines;
+}
+
+/**
+ * Infer architecture modules from a list of file paths.
+ * Groups files by directory/module and returns unique module names.
+ */
+export function inferArchModules(files: string[]): string[] {
+  const modules = new Set<string>();
+  for (const f of files) {
+    const mod = inferModuleFromPath(f);
+    if (mod) modules.add(mod);
+  }
+  return [...modules].sort();
+}
+
 // ── Rendering ────────────────────────────────────────
 
 /**
@@ -99,60 +251,73 @@ export function buildReviewWidget(
   },
 ): string[] {
   const lines: string[] = [];
-  const senior = SENIOR_FRAMES[animFrame % SENIOR_FRAMES.length];
+  const artFrames = state.isRoundup ? ROUNDUP_FRAMES : SENIOR_FRAMES;
+  const senior = artFrames[animFrame % artFrames.length];
   const spinner = SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length];
 
   // Top separator
   lines.push(theme.fg("dim", "─".repeat(60)));
 
-  // Build file list (right side)
-  const fileLines: string[] = [];
+  // Build info panel (right side)
+  const infoLines: string[] = [];
   const elapsed = ((Date.now() - state.startTime) / 1000).toFixed(0);
   const modelShort = (state.model || "").split("/").pop() ?? "";
   const toolInfo = state.totalToolCalls > 0
     ? theme.fg("dim", ` tools: ${state.totalToolCalls}`)
     : "";
+  const reviewType = state.isRoundup ? "Roundup Review" : "Reviewing";
 
-  fileLines.push(
-    theme.fg("accent", theme.bold(`${spinner} Reviewing…`)) +
+  infoLines.push(
+    theme.fg("accent", theme.bold(`${spinner} ${reviewType}…`)) +
       theme.fg("dim", ` [${state.loopCount}/${state.maxLoops}]`) +
       theme.fg("dim", ` ${modelShort}`) +
       theme.fg("dim", ` ${elapsed}s`) +
       toolInfo,
   );
-  fileLines.push("");
+  infoLines.push("");
+
+  if (state.isRoundup && state.archDiagram && state.archDiagram.length > 0) {
+    // Show architecture diagram for roundup
+    for (const line of state.archDiagram) {
+      infoLines.push(line);
+    }
+    infoLines.push("");
+  }
 
   if (state.files.length > 0) {
-    fileLines.push(theme.fg("muted", "Files:"));
+    infoLines.push(theme.fg("muted", "Files:"));
     for (const f of state.files) {
       const shortPath = f.split("/").slice(-3).join("/");
       const count = state.toolCounts.get(f) ?? 0;
-      const toolTag = count > 0 ? theme.fg("dim", ` [${count} tool${count > 1 ? "s" : ""}]`) : "";
+      const lastDesc = state.lastToolDesc.get(f) ?? "";
+      const toolTag = count > 0
+        ? theme.fg("dim", ` [${count}]`) + (lastDesc ? theme.fg("dim", ` ${lastDesc}`) : "")
+        : "";
 
       if (f === state.activeFile) {
-        fileLines.push(
+        infoLines.push(
           `  ${theme.fg("accent", "▸")} ${theme.fg("warning", shortPath)}${toolTag} ${theme.fg("warning", "← reviewing")}`,
         );
       } else if (count > 0) {
-        fileLines.push(
+        infoLines.push(
           `  ${theme.fg("success", "✓")} ${theme.fg("muted", shortPath)}${toolTag}`,
         );
       } else {
-        fileLines.push(`  ${theme.fg("dim", "·")} ${theme.fg("muted", shortPath)}`);
+        infoLines.push(`  ${theme.fg("dim", "·")} ${theme.fg("muted", shortPath)}`);
       }
     }
   }
 
   if (state.activity) {
-    fileLines.push("");
-    fileLines.push(theme.fg("dim", `  ${state.activity}`));
+    infoLines.push("");
+    infoLines.push(theme.fg("dim", `  ${state.activity}`));
   }
 
-  // Merge ASCII art (left) with file list (right)
-  const maxRows = Math.max(senior.length, fileLines.length);
+  // Merge ASCII art (left) with info panel (right)
+  const maxRows = Math.max(senior.length, infoLines.length);
   for (let i = 0; i < maxRows; i++) {
     const artPart = i < senior.length ? theme.fg("accent", senior[i]) : " ".repeat(18);
-    const infoPart = i < fileLines.length ? fileLines[i] : "";
+    const infoPart = i < infoLines.length ? infoLines[i] : "";
     lines.push(`${artPart}  ${infoPart}`);
   }
 
@@ -182,6 +347,7 @@ export function startReviewDisplay(
   const state: ReviewDisplayState = {
     ...initialState,
     toolCounts: new Map(initialState.toolCounts),
+    lastToolDesc: new Map(initialState.lastToolDesc),
   };
 
   // Per-instance animation state
@@ -200,7 +366,7 @@ export function startReviewDisplay(
     spinnerFrame = (spinnerFrame + 1) % SPINNER_FRAMES.length;
     tickCount++;
     if (tickCount % 4 === 0) {
-      animFrame = (animFrame + 1) % SENIOR_FRAMES.length;
+      animFrame = (animFrame + 1) % (state.isRoundup ? ROUNDUP_FRAMES.length : SENIOR_FRAMES.length);
     }
     redraw();
   }, 150);
@@ -213,17 +379,34 @@ export function startReviewDisplay(
         state.toolCounts = new Map(patch.toolCounts);
         delete (patch as any).toolCounts;
       }
+      if (patch.lastToolDesc) {
+        state.lastToolDesc = new Map(patch.lastToolDesc);
+        delete (patch as any).lastToolDesc;
+      }
       Object.assign(state, patch);
       redraw();
     },
     recordToolCall(toolName: string, targetPath: string | null) {
       state.totalToolCalls++;
+      const desc = formatToolDesc(toolName, targetPath);
 
       // Try to associate this tool call with a file
       const match = targetPath ? findMatchingFile(state.files, targetPath) : null;
       if (match) {
         state.toolCounts.set(match, (state.toolCounts.get(match) ?? 0) + 1);
+        state.lastToolDesc.set(match, desc);
         state.activeFile = match;
+      }
+
+      // For roundup, try to highlight the matching architecture module
+      if (state.isRoundup && state.archDiagram && targetPath) {
+        const mod = inferModuleFromPath(targetPath);
+        if (mod && mod !== state.archActiveModule) {
+          state.archActiveModule = mod;
+          // Rebuild the diagram with the new active module
+          const modules = inferArchModules(state.files);
+          state.archDiagram = buildArchDiagram(modules, mod, ui.theme);
+        }
       }
 
       // Set activity based on tool type
@@ -238,6 +421,18 @@ export function startReviewDisplay(
         state.activity = `${toolName}…`;
       }
 
+      redraw();
+    },
+    setRoundupMode(archDiagram?: string[]) {
+      state.isRoundup = true;
+      state.archDiagram = archDiagram ?? null;
+      state.archActiveModule = null;
+      // Reset tool counts for the roundup phase
+      state.toolCounts = new Map();
+      state.lastToolDesc = new Map();
+      state.totalToolCalls = 0;
+      state.startTime = Date.now();
+      state.activity = "architecture review…";
       redraw();
     },
     stop() {

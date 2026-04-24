@@ -55,7 +55,7 @@ import {
 } from "./roundup";
 import { findGitRoot, resolveAllGitRoots } from "./git-roots";
 import { log, logRotate } from "./logger";
-import { startReviewDisplay, type ReviewDisplayHandle } from "./review-display";
+import { startReviewDisplay, inferArchModules, buildArchDiagram, type ReviewDisplayHandle } from "./review-display";
 import {
   SCAFFOLD_SETTINGS,
   SCAFFOLD_REVIEW_RULES,
@@ -146,7 +146,11 @@ export default function (pi: ExtensionAPI) {
       model: settings.model,
       startTime: Date.now(),
       toolCounts: new Map(),
+      lastToolDesc: new Map(),
       totalToolCalls: 0,
+      isRoundup: false,
+      archDiagram: null,
+      archActiveModule: null,
     });
 
     return {
@@ -630,7 +634,14 @@ export default function (pi: ExtensionAPI) {
             if (judge.recommended) {
               log(`roundup: running — ${judge.reason}`);
               updateStatus(ctx, "roundup review…");
-              if (reviewDisplay) reviewDisplay.update({ activity: "roundup review…" });
+
+              // Switch widget to roundup mode with inferred architecture diagram
+              if (reviewDisplay) {
+                const modules = inferArchModules([...sessionChangedFiles]);
+                const archDiagram = buildArchDiagram(modules, null, ctx.ui.theme as any);
+                reviewDisplay.setRoundupMode(archDiagram);
+              }
+
               try {
                 const summaryText = sessionChangeSummaries.join("\n\n---\n\n");
                 await runRoundupReview({
@@ -643,6 +654,9 @@ export default function (pi: ExtensionAPI) {
                   onActivity: (desc) => {
                     updateStatus(ctx, `roundup: ${desc}`);
                     if (reviewDisplay) reviewDisplay.update({ activity: `roundup: ${desc}` });
+                  },
+                  onToolCall: (toolName, targetPath) => {
+                    if (reviewDisplay) reviewDisplay.recordToolCall(toolName, targetPath);
                   },
                 });
               } catch (err: any) {

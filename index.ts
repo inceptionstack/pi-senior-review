@@ -82,6 +82,7 @@ export default function (pi: ExtensionAPI) {
   let architectRules: string | null = null;
   let sessionChangeSummaries: string[] = []; // accumulates change summaries across loops
   let sessionChangedFiles = new Set<string>(); // accumulates files across review loops for architect review
+  let sessionHasGitContent = false; // true once any review loop used git-based content
 
   let settings: AutoReviewSettings = { ...DEFAULT_SETTINGS };
   let customRules: string | null = null;
@@ -302,6 +303,7 @@ export default function (pi: ExtensionAPI) {
         architectDone = false;
         sessionChangeSummaries = [];
         sessionChangedFiles = new Set();
+        sessionHasGitContent = false;
         if (ctx.hasUI) ctx.ui.notify(`Senior review: on`, "info");
         // Only prompt to review if agent is idle and there are pending files.
         // If agent is mid-turn, silently enable — review triggers at next agent_end.
@@ -595,6 +597,7 @@ export default function (pi: ExtensionAPI) {
       // Track change summary and files for architect review
       sessionChangeSummaries.push(best.content.slice(0, 5000));
       for (const f of best.files) sessionChangedFiles.add(f);
+      if (best.isGitBased) sessionHasGitContent = true;
 
       // Mark content as reviewed (only after successful completion)
       // Recompute hash since fallback retry may have replaced best
@@ -605,10 +608,10 @@ export default function (pi: ExtensionAPI) {
         reviewLoopCount = 0;
         sendReviewResult(pi, result, "", { reviewedFiles: best.files });
 
-        // Architect review: always trigger when >1 file reviewed from git repo(s)
-        if (settings.architectEnabled && !architectDone && shouldRunArchitectReview(best.files, best.isGitBased)) {
+        // Architect review: trigger when >1 file reviewed across the session from git repo(s)
+        if (settings.architectEnabled && !architectDone && shouldRunArchitectReview([...sessionChangedFiles], sessionHasGitContent)) {
           architectDone = true;
-          log(`architect: running — ${best.files.length} files reviewed`);
+          log(`architect: running — ${sessionChangedFiles.size} files reviewed across session`);
           updateStatus(ctx, "architect review…");
 
           // Switch widget to architect mode with inferred architecture diagram
@@ -646,6 +649,7 @@ export default function (pi: ExtensionAPI) {
             sessionChangedFiles = new Set();
             peakReviewLoopCount = 0;
             architectDone = false;
+            sessionHasGitContent = false;
           }
         }
       } else {
@@ -721,6 +725,7 @@ export default function (pi: ExtensionAPI) {
       lastReviewHadIssues = false;
       sessionChangeSummaries = [];
       sessionChangedFiles = new Set();
+      sessionHasGitContent = false;
       clearActivityTimer();
       if (reviewDisplay) {
         reviewDisplay.stop();
@@ -1249,6 +1254,7 @@ export default function (pi: ExtensionAPI) {
     architectDone = false;
     sessionChangeSummaries = [];
     sessionChangedFiles = new Set();
+    sessionHasGitContent = false;
 
     const [rules, autoRules, settingsResult, patterns, rRules] = await Promise.all([
       loadReviewRules(ctx.cwd),

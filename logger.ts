@@ -8,7 +8,15 @@
  * Uses sync writes to guarantee output even in complex async flows.
  */
 
-import { appendFileSync, mkdirSync, statSync, renameSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -120,6 +128,43 @@ export function logReview(entry: ReviewLogEntry): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Remove all pi-lgtm log/review history files.
+ * Wipes `review.log`, the rotated `review.log.old`, and every
+ * `reviews/*.json` structured record. Does NOT touch user config
+ * (settings.json, review-rules.md, etc.) — only the append-only
+ * history pi-lgtm owns.
+ *
+ * Returns a summary of what was removed.
+ */
+export function cleanLogs(): { logsRemoved: number; reviewsRemoved: number } {
+  let logsRemoved = 0;
+  let reviewsRemoved = 0;
+  for (const file of [LOG_FILE, LOG_OLD]) {
+    try {
+      rmSync(file, { force: true });
+      logsRemoved++;
+    } catch {
+      /* already gone */
+    }
+  }
+  try {
+    const files = readdirSync(REVIEWS_DIR);
+    for (const f of files) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        rmSync(join(REVIEWS_DIR, f), { force: true });
+        reviewsRemoved++;
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    /* reviews dir might not exist yet */
+  }
+  return { logsRemoved, reviewsRemoved };
 }
 
 export { LOG_FILE, LOG_DIR, REVIEWS_DIR };

@@ -39,7 +39,7 @@ import { getBestReviewContent } from "./context";
 import { loadIgnorePatterns } from "./ignore";
 import { loadArchitectRules } from "./architect";
 import { findGitRoot, resolveAllGitRoots } from "./git-roots";
-import { log, logRotate } from "./logger";
+import { cleanLogs, log, logRotate } from "./logger";
 import { ReviewOrchestrator, type ReviewOutcome } from "./orchestrator";
 import { registerReviewCommands, type ManualReviewController } from "./commands";
 import {
@@ -485,7 +485,14 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("agent_start", async (_event, ctx) => {
-    skipStatusShowing = false; // New turn — clear skip message from previous turn
+    // Don't clear `skipStatusShowing` here. The skip indicator should persist
+    // across turns until:
+    //   (a) a new review cycle starts — cleared in runAutoReview, or
+    //   (b) the agent performs real file activity — cleared in
+    //       tool_execution_start for file-modifying tools.
+    // Clearing it on every agent_start was making the indicator vanish as
+    // soon as the user sent their next prompt, even though nothing had
+    // actually changed review-wise.
     resetTrackingState(ctx);
   });
 
@@ -518,7 +525,16 @@ export default function (pi: ExtensionAPI) {
                       : null;
           if (reason) {
             skipStatusShowing = true;
-            ui.setStatus("code-review", `${label} ${theme.fg("dim", `skipped — ${reason}`)}`);
+            // Visible "✓ review skipped" with reason dim next to it. Using the
+            // success color signals the "nothing needed reviewing" outcome as
+            // a positive (vs the dim gray it used to be, which was easy to
+            // miss). Status persists until the next review cycle starts
+            // (skipStatusShowing=false is set in runAutoReview) or real file
+            // activity in tool_execution_start.
+            ui.setStatus(
+              "code-review",
+              `${label} ${theme.fg("success", "✓ review skipped")} ${theme.fg("dim", `— ${reason}`)}`,
+            );
           }
         }
 
@@ -771,6 +787,21 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  // ── /review-clean-logs command ──────────────
+  //
+  // Wipes ~/.pi/.lgtm/review.log (+ .old) and every structured reviews/*.json.
+  // Does NOT touch user config (settings.json, review-rules.md, etc.) — only
+  // the append-only history pi-lgtm owns. Useful when testing changes to the
+  // review pipeline without noise from prior runs.
+  pi.registerCommand("review-clean-logs", {
+    description: "Wipe pi-lgtm review logs (review.log + reviews/*.json); leaves config untouched",
+    handler: async (_args, ctx) => {
+      const { logsRemoved, reviewsRemoved } = cleanLogs();
+      const summary = `Cleared ${logsRemoved} log file${logsRemoved === 1 ? "" : "s"} and ${reviewsRemoved} review record${reviewsRemoved === 1 ? "" : "s"}`;
+      log(`review-clean-logs: ${summary}`);
+      if (ctx.hasUI) ctx.ui.notify(summary, "info");
+    },
+  });
   manualReviews = registerReviewCommands({
     pi,
     getSettings: () => settings,

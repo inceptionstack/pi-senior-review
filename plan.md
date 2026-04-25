@@ -177,6 +177,40 @@ Default to pi-sdk for all existing personalities; users override per step in the
 
 **Status:** [ ] design only. Needs backend contract RFC first, then pilot with codex-cli as the second backend (since we already use it in the dev loop — fastest path to validate the abstraction).
 
+## D6. Don't re-review the same file across cycles if it hasn't changed
+
+**Problem:** Captured during the 2026-04-25 manual judge-scenarios live test (see `judge-scenarios-manual-test.md`). The uncommitted `judge-scenarios-manual-test.md` was reviewed by the senior reviewer **four separate times in a row** within ~10 minutes (review-ids `r-f7c27f95`, `r-2f61ce21`, `r-4b1dd662`, `r-0f2f62cc`). Between reviews the file's content on disk was identical — no edits — but each cycle paid the full 7–53s + token cost anyway. Reason: `getBestReviewContent` path-2 (cwd git repo fallback) re-queries `git status` each turn and picks up every untracked/modified file it finds, with no memory of what was already reviewed and unchanged.
+
+**Intent:** A review is worth running when there is _new_ content to examine. If file X was reviewed on cycle N with an LGTM verdict, and cycle N+K reaches X again with bit-identical content, that cycle should skip X (or skip entirely if X is the only file). Don't pay to be told "LGTM" again on the same bytes.
+
+Contrast with the existing `duplicate_content` hash check in the orchestrator — that hashes the _combined_ review content (prompt input). It catches "exact same diff text" but not "same file that keeps showing up in `git status` because it's still untracked". Path-2 content includes e.g. the current `git status` output which changes between reviews even when the file content doesn't. So the existing dedup misses this case.
+
+**Brainstorm directions (pick later):**
+
+1. **Per-file content-hash memory** — on LGTM for file X, record `sha256(file X content)` → verdict into a session-local Map. Next cycle, before handing X to the reviewer, hash it again; if the hash matches a prior LGTM, drop X from the review set. If every file drops, skip the whole cycle (new skip reason: `all_files_unchanged_since_lgtm`). Simple and correct. Doesn't cache across pi sessions — fresh start on `/reload` is fine.
+2. **Per-file content-hash + verdict (LGTM or ISSUES)** — richer variant: cache the verdict too. Unchanged file with a prior ISSUES verdict means "issues still unresolved", which is the `hadIssuesBefore` branch in `renderOutcome`. We could surface "still needs fixing" without re-running the reviewer. More invasive; defer unless D6.1 proves insufficient.
+3. **Git-tree SHA per path** — instead of hashing content ourselves, use `git ls-files -s` / `git hash-object` to get git's blob sha per path. Free hash for tracked files, works for untracked via `git hash-object --no-filters --stdin`. Slightly faster than reading + sha256'ing. Trade-off: one extra `git` call per candidate file.
+4. **Skip files whose mtime + size are unchanged** — cheapest but wrong for sub-second edits and for files rewritten to identical content. Not recommended; hashes are worth the cost.
+5. **Per-review-id cache only (no cross-review memory)** — rejected: doesn't solve the observed problem, which is _across_ review cycles.
+
+**Where it lives:** `orchestrator.ts` — same layer as the existing `lastReviewedContentHash` dedup. Add a `reviewedFileHashes: Map<string, {hash: string, verdict: "lgtm" | "issues"}>` on the orchestrator, populated inside `handleAgentEnd` after a completed cycle, consulted at the start before content building. Cache keyed by absolute path; cleared on `reset()` and `setEnabled(false)`.
+
+**Edge cases to think through:**
+
+- File was LGTM, then edited, then edited back to the original content — we'd currently re-review (hash differs at the mid-point), then skip. Fine.
+- File was ISSUES, user did nothing, file still in working tree next turn — skip-file would hide unresolved issues; we need to keep re-reviewing ISSUES files OR surface "still unresolved" without running. Direction 2 solves this; direction 1 needs to only skip on prior LGTM.
+- Architect review — architect operates on cross-file consistency, so a single unchanged file shouldn't block architect; skip logic should apply to the _senior_ review cycle only. Architect has its own `shouldRunArchitectReview` gate that already considers file count.
+- File deleted between reviews — drop from cache on detection (cheap `existsSync` check, or trust `git status`).
+
+**Tests to add:**
+
+- Orchestrator unit test: cycle 1 reviews X → LGTM, cycle 2 with identical X content skips X, cycle 3 with edited X re-reviews it.
+- Orchestrator unit test: cycle 1 reviews X → ISSUES, cycle 2 with identical X still re-reviews (until LGTM resolves).
+- Multi-file cycle: skip only the unchanged subset, still review the changed files.
+- Regression: `resetCycleState()` clears the per-file hash map (in addition to existing state).
+
+**Status:** [ ] design only. Needs a small RFC covering the verdict-semantics (direction 1 vs 2) before code. D6.1 is the minimum viable.
+
 ## Open Issues
 
 ### Changelog check in default review rules

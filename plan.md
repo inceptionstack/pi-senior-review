@@ -116,7 +116,7 @@
 | File                        | Tests | Coverage                                                       |
 | --------------------------- | ----- | -------------------------------------------------------------- |
 | `test/architect.test.ts`    | 12    | `architect.ts` fully covered                                   |
-| `test/changes.test.ts`      | 92    | `changes.ts` fully covered (incl. `isNonFileModifyingCommand`) |
+| `test/changes.test.ts`      | 99    | `changes.ts` fully covered (incl. `isNonFileModifyingCommand`) |
 | `test/context.test.ts`      | 6     | `context.ts` formatReviewContext                               |
 | `test/git-roots.test.ts`    | 17    | `git-roots.ts` fully covered (incl. tilde expansion)           |
 | `test/helpers.test.ts`      | 11    | `helpers.ts` fully covered                                     |

@@ -32,21 +32,17 @@ Agent makes file changes (write, edit, bash)
     │         │
   LGTM    Issues found
     │         │
-    ▼         ▼
-  Roundup  Feeds back to main agent
-  gate?    Agent fixes → new review loop
+    │         ▼
+    │      Feeds back to main agent
+    │      Agent fixes → new review loop
     │       (up to maxReviewLoops)
     │
-    ▼ Cheap heuristics
-    │ (< 3 files? only tests? no fix loops? → skip)
-    │
-    ▼ LLM judge (2-5s)
-    │ (are changes complex enough for architecture review?)
+    ▼ >1 file reviewed from git?
     │
     ├── No → done
     │
-    └── Yes → Full roundup review
-              (architecture, cross-file consistency, tech debt)
+    └── Yes → Architect review
+              (cross-file consistency, architecture coherence)
 ```
 
 The reviewer checks for:
@@ -57,8 +53,6 @@ The reviewer checks for:
 - DRY violations (Don't Repeat Yourself)
 - Single Responsibility Principle
 - Readability and maintainability
-- **Test coverage** — are there tests for new code?
-- **Test quality** — naming conventions, entry/exit points, isolation (per Roy Osherove's "Art of Unit Testing" 3rd edition)
 
 ## Configuration
 
@@ -78,22 +72,24 @@ Use `/scaffold-review-files` to generate config templates.
   "maxReviewLoops": 100,
   "model": "amazon-bedrock/us.anthropic.claude-opus-4-6-v1",
   "thinkingLevel": "off",
-  "roundupEnabled": true,
+  "architectEnabled": true,
   "reviewTimeoutMs": 120000,
   "toggleShortcut": "alt+r",
   "cancelShortcut": ""
 }
 ```
 
-| Setting           | Type        | Default                                            | Description                                        |
-| ----------------- | ----------- | -------------------------------------------------- | -------------------------------------------------- |
-| `maxReviewLoops`  | integer > 0 | `100`                                              | Max review→fix→review cycles before stopping       |
-| `model`           | string      | `"amazon-bedrock/us.anthropic.claude-opus-4-6-v1"` | Reviewer model (`"provider/model-id"`)             |
-| `thinkingLevel`   | string      | `"off"`                                            | `off\|minimal\|low\|medium\|high\|xhigh`           |
-| `roundupEnabled`  | boolean     | `true`                                             | Enable roundup reviews (gated by heuristics+judge) |
-| `reviewTimeoutMs` | integer > 0 | `120000`                                           | Max wall-clock per review in ms                    |
-| `toggleShortcut`  | string      | `"alt+r"`                                          | Key id for toggling review on/off                  |
-| `cancelShortcut`  | string      | `""` (none)                                        | Key id for cancelling review (opt-in, see below)   |
+| Setting            | Type        | Default                                            | Description                                                       |
+| ------------------ | ----------- | -------------------------------------------------- | ----------------------------------------------------------------- |
+| `maxReviewLoops`   | integer > 0 | `100`                                              | Max review→fix→review cycles before stopping                      |
+| `model`            | string      | `"amazon-bedrock/us.anthropic.claude-opus-4-6-v1"` | Reviewer model (`"provider/model-id"`)                            |
+| `thinkingLevel`    | string      | `"off"`                                            | `off\|minimal\|low\|medium\|high\|xhigh`                          |
+| `architectEnabled` | boolean     | `true`                                             | Enable architect review (triggers when >1 file reviewed from git) |
+| `reviewTimeoutMs`  | integer > 0 | `120000`                                           | Max wall-clock per review in ms                                   |
+| `toggleShortcut`   | string      | `"alt+r"`                                          | Key id for toggling review on/off                                 |
+| `cancelShortcut`   | string      | `""` (none)                                        | Key id for cancelling review (opt-in, see below)                  |
+
+> **Note:** `roundupEnabled` is accepted as a legacy alias for `architectEnabled`.
 
 ### `.senior-review/review-rules.md`
 
@@ -117,9 +113,9 @@ Use `/add-review-rule <text>` to quickly prepend rules, or `/senior-edit-review-
 
 Override the "what to review / what not to report" section of the review prompt. The surrounding prompt (tools, budget, workflow, response format) is always included automatically.
 
-### `.senior-review/roundup.md`
+### `.senior-review/architect.md`
 
-Custom rules for the roundup architecture review:
+Custom rules for the architect review (cross-file consistency check):
 
 ```markdown
 ## Architecture
@@ -128,6 +124,8 @@ Custom rules for the roundup architecture review:
 - Check error handling is consistent across all modules
 - Flag any TODO/FIXME comments added during fix loops
 ```
+
+> **Note:** `.senior-review/roundup.md` is accepted as a legacy fallback.
 
 ### `.senior-review/ignore`
 
@@ -167,7 +165,7 @@ During reviews, an animated widget appears below the editor showing:
 | `/review`                   | Toggle senior-review on/off                                        |
 | `/review N`                 | Review the last N commits                                          |
 | `/review-all`               | Review all changes (pending diff → last commit → all files in cwd) |
-| `/cancel-review`            | Cancel an in-progress review (works during roundup)                |
+| `/cancel-review`            | Cancel an in-progress review (works during architect review)       |
 | `/scaffold-review-files`    | Create `.senior-review/` config templates in a git repo            |
 | `/senior-edit-review-rules` | Edit `.senior-review/review-rules.md` in pi's built-in editor      |
 | `/add-review-rule <text>`   | Prepend a custom rule to `.senior-review/review-rules.md`          |
@@ -191,24 +189,11 @@ During reviews, an animated widget appears below the editor showing:
 4. If loop count reaches `maxReviewLoops` → stops with a warning
 5. Toggling off/on with `/review` resets the counter
 
-### Smart roundup review
+### Architect review
 
-After the review loop reaches LGTM, a **roundup review** may trigger automatically. It's gated by a two-stage filter to avoid wasting time on trivial changes:
+After the senior review loop reaches LGTM, an **architect review** triggers automatically when more than one file was reviewed from git across the session. No heuristics or judge gating — it always runs for multi-file changes.
 
-**Stage 1 — Cheap heuristics (instant):**
-
-- Skip if < 3 files changed across the session
-- Skip if only test files changed
-- Skip if no fix loops happened (first-pass LGTM)
-
-**Stage 2 — LLM judge (2-5 seconds):**
-
-- A quick LLM call decides if the changes warrant a broader architecture review
-- Gets: file list, fix loop count, change summaries
-- Valuable after: multi-module refactoring, new interfaces, complex fix loops
-- Not needed for: localized bug fixes, additive changes, config/docs
-
-If the judge recommends it, the full roundup review runs. It:
+The architect review:
 
 - Checks architecture coherence across all changes
 - Verifies cross-file consistency (naming, patterns, types)
@@ -216,7 +201,7 @@ If the judge recommends it, the full roundup review runs. It:
 - Validates documentation is still accurate
 - Uses tools (`read`, `bash`, `grep`, `find`, `ls`) to explore the full codebase
 
-Disable with `"roundupEnabled": false` in settings.
+Disable with `"architectEnabled": false` in settings.
 
 ## What triggers a review
 
@@ -240,7 +225,7 @@ You can cancel a review at any time:
 - **Configured shortcut** — set `cancelShortcut` in settings if you want a hotkey
 - **`ctrl+alt+r`** — fallback, works in terminals that support the key combo
 
-Cancellation stops the current review immediately, including roundup judge calls and full roundup reviews. The agent continues normally.
+Cancellation stops the current review immediately, including architect reviews. The agent continues normally.
 
 ## License
 

@@ -9,6 +9,7 @@ import {
   isNonFileModifyingCommand,
   isFormatterCommand,
   isFormattingOnlyTurn,
+  hasGitCommitCommand,
 } from "../changes";
 
 describe("hasFileChanges", () => {
@@ -439,5 +440,50 @@ describe("isFormattingOnlyTurn", () => {
     expect(isFormattingOnlyTurn([{ name: "bash", input: { command: "npm run format" } }])).toBe(
       true,
     );
+  });
+});
+
+describe("hasGitCommitCommand", () => {
+  it("matches plain git commit", () => {
+    expect(hasGitCommitCommand([{ name: "bash", input: { command: "git commit -m 'fix'" } }])).toBe(
+      true,
+    );
+  });
+
+  it("matches git -C <dir> commit", () => {
+    expect(
+      hasGitCommitCommand([
+        { name: "bash", input: { command: "git -C /tmp/repo commit -am 'wip'" } },
+      ]),
+    ).toBe(true);
+  });
+
+  it("does not match git log", () => {
+    expect(hasGitCommitCommand([{ name: "bash", input: { command: "git log --oneline" } }])).toBe(
+      false,
+    );
+  });
+
+  it("does not match git push", () => {
+    expect(
+      hasGitCommitCommand([{ name: "bash", input: { command: "git push origin main" } }]),
+    ).toBe(false);
+  });
+
+  it("does not match write tool calls", () => {
+    expect(hasGitCommitCommand([{ name: "write", input: { path: "foo.ts" } }])).toBe(false);
+  });
+
+  it("returns false for empty tool calls", () => {
+    expect(hasGitCommitCommand([])).toBe(false);
+  });
+
+  it("matches git commit among multiple tool calls", () => {
+    expect(
+      hasGitCommitCommand([
+        { name: "bash", input: { command: "npm run build" } },
+        { name: "bash", input: { command: "git add . && git commit -m 'done'" } },
+      ]),
+    ).toBe(true);
   });
 });

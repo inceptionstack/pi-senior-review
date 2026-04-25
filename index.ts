@@ -131,7 +131,9 @@ export default function (pi: ExtensionAPI) {
   function resetTrackingState(ctx: { ui: any; hasUI?: boolean }) {
     agentToolCalls = [];
     modifiedFiles.clear();
-    detectedGitRoots.clear();
+    // NOTE: detectedGitRoots is NOT cleared here — it's session-level state.
+    // It tracks repos the agent has worked in across turns, used by /review-all
+    // when ctx.cwd isn't itself a git repo.
     pendingArgs.clear();
     fileCapWarned = false;
     updateStatus(ctx);
@@ -508,6 +510,7 @@ export default function (pi: ExtensionAPI) {
       log("Full reset via Ctrl+Alt+Shift+R");
       manualReviews?.cancel();
       orchestrator.reset();
+      detectedGitRoots.clear(); // full reset clears session-level state too
       if (reviewDisplay) {
         reviewDisplay.stop();
         reviewDisplay = null;
@@ -557,6 +560,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     orchestrator.reset();
+    detectedGitRoots.clear(); // session-level: clear on new session
 
     const [rules, autoRules, settingsResult, patterns, rRules] = await Promise.all([
       loadReviewRules(ctx.cwd),

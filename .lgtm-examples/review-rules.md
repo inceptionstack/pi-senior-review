@@ -1,6 +1,6 @@
 # Example: Review Rules
 
-Place this file at `.senior-review/review-rules.md` in your project root to add project-specific rules to every mini-review.
+Place this file at `.lgtm/review-rules.md` in your project root to add project-specific rules to every mini-review.
 
 ---
 

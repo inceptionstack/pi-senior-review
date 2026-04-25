@@ -1,6 +1,6 @@
 # Example: Settings
 
-Place this file at `.senior-review/settings.json` in your project root.
+Place this file at `.lgtm/settings.json` in your project root.
 
 ```json
 {

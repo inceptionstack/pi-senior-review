@@ -1,6 +1,6 @@
 # Example: Roundup Review Rules
 
-Place this file at `.senior-review/roundup.md` in your project root to customize the final "zoom out" review that runs after all mini-review loops complete.
+Place this file at `.lgtm/roundup.md` (or `.lgtm/architect.md`) in your project root to customize the final "zoom out" review that runs after all mini-review loops complete.
 
 ---
 

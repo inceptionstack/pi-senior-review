@@ -1,6 +1,6 @@
 # Example: Ignore patterns
 
-Place this file at `.senior-review/ignore` in your project root. Same syntax as `.gitignore`.
+Place this file at `.lgtm/ignore` in your project root. Same syntax as `.gitignore`.
 
 ```
 # Dependencies

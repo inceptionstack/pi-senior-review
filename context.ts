@@ -63,7 +63,9 @@ export async function buildReviewContext(
   let diff = fullDiffResult.code === 0 ? fullDiffResult.stdout.trim() : "";
 
   onStatus?.("listing changed files…");
-  const changedResult = await pi.exec("git", ["diff", "HEAD", "--name-only"], { timeout: 5000 });
+  const changedResult = await pi.exec("git", ["diff", "--diff-filter=d", "HEAD", "--name-only"], {
+    timeout: 5000,
+  });
   let changedFiles =
     changedResult.code === 0 ? changedResult.stdout.trim().split("\n").filter(Boolean) : [];
 
@@ -316,9 +318,13 @@ async function listDiffFiles(
   root: string,
   ...range: string[]
 ): Promise<string[]> {
-  const result = await pi.exec("git", ["-C", root, "diff", ...range, "--name-only"], {
-    timeout: 5000,
-  });
+  const result = await pi.exec(
+    "git",
+    ["-C", root, "diff", "--diff-filter=d", ...range, "--name-only"],
+    {
+      timeout: 5000,
+    },
+  );
   return result.code === 0 ? result.stdout.trim().split("\n").filter(Boolean) : [];
 }
 
@@ -442,9 +448,13 @@ export async function getContentFromLastCommit(
     const commitLog = (
       await pi.exec("git", ["log", "--oneline", "-10"], { timeout: 5000 })
     ).stdout.trim();
-    const nameResult = await pi.exec("git", ["diff", "HEAD~1", "HEAD", "--name-only"], {
-      timeout: 5000,
-    });
+    const nameResult = await pi.exec(
+      "git",
+      ["diff", "--diff-filter=d", "HEAD~1", "HEAD", "--name-only"],
+      {
+        timeout: 5000,
+      },
+    );
     let files = nameResult.code === 0 ? nameResult.stdout.trim().split("\n").filter(Boolean) : [];
 
     // Apply ignore patterns so the last-commit fallback respects .senior-review/ignore

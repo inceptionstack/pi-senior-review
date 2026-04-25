@@ -156,7 +156,7 @@ export function registerReviewCommands(opts: RegisterCommandsOptions): ManualRev
           diffArgs.push("diff", `HEAD~${effectiveCount}`, "HEAD");
         }
 
-        const nameArgs = [...diffArgs, "--name-only"];
+        const nameArgs = [...diffArgs, "--diff-filter=d", "--name-only"];
         const nameResult = await gitExec(ctx.cwd, nameArgs);
         let changedFiles =
           nameResult.code === 0 ? nameResult.stdout.trim().split("\n").filter(Boolean) : [];
@@ -255,7 +255,12 @@ export function registerReviewCommands(opts: RegisterCommandsOptions): ManualRev
           const pendingDiff = await gitExec(gitRoot, ["diff", "HEAD"], 15000);
           const hasPendingDiff = pendingDiff.code === 0 && pendingDiff.stdout.trim();
 
-          const pendingNames = await gitExec(gitRoot, ["diff", "HEAD", "--name-only"]);
+          const pendingNames = await gitExec(gitRoot, [
+            "diff",
+            "--diff-filter=d",
+            "HEAD",
+            "--name-only",
+          ]);
           const pendingFiles =
             pendingNames.code === 0 ? pendingNames.stdout.trim().split("\n").filter(Boolean) : [];
 
@@ -313,7 +318,12 @@ export function registerReviewCommands(opts: RegisterCommandsOptions): ManualRev
               diffArgs = ["HEAD~1", "HEAD"];
             }
 
-            const lastNames = await gitExec(gitRoot, ["diff", ...diffArgs, "--name-only"]);
+            const lastNames = await gitExec(gitRoot, [
+              "diff",
+              "--diff-filter=d",
+              ...diffArgs,
+              "--name-only",
+            ]);
             reviewFiles =
               lastNames.code === 0 ? lastNames.stdout.trim().split("\n").filter(Boolean) : [];
 

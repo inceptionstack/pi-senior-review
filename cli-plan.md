@@ -372,7 +372,7 @@ Private subprocess env:
 | `HARDNO_HARNESS_INPUT_FILE` | JSON metadata file written by `pi-lgtm`; not public CLI surface. |
 | `HARDNO_RUN_ID`             | Optional run id for correlation.                                 |
 
-### Harness event file
+### Harness input file
 
 `pi-lgtm` writes this temp file before spawning hardno so hardno can preserve judge behavior and change summaries.
 
@@ -831,7 +831,7 @@ Step 5.3: publish.
 - CLI argument parsing.
 - NDJSON writer and final JSON output.
 - Config precedence and env overrides.
-- Harness event file validation.
+- Harness input file validation.
 - Path-hint scoping.
 - Command timeout.
 - Cancellation.
@@ -843,7 +843,7 @@ Step 5.3: publish.
 - Malformed NDJSON is logged, not fatal.
 - Child exit without final event renders failure.
 - Cancellation sends `SIGTERM` then `SIGKILL`.
-- Harness event file includes tool calls, modified files, git roots, and last user message.
+- Harness input file includes tool calls, modified files, git roots, and last user message.
 - Widget receives `content_ready` and `tool_call`.
 - Judge skip final event produces persistent chat behavior.
 - Push guard blocks while hardno runs and after `issues_found`.

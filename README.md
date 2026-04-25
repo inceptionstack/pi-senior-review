@@ -75,19 +75,25 @@ Use `/scaffold-review-files` to generate config templates.
   "architectEnabled": true,
   "reviewTimeoutMs": 120000,
   "toggleShortcut": "alt+r",
-  "cancelShortcut": ""
+  "cancelShortcut": "",
+  "judgeEnabled": false,
+  "judgeModel": "amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "judgeTimeoutMs": 10000
 }
 ```
 
-| Setting            | Type        | Default                                            | Description                                                       |
-| ------------------ | ----------- | -------------------------------------------------- | ----------------------------------------------------------------- |
-| `maxReviewLoops`   | integer > 0 | `100`                                              | Max review→fix→review cycles before stopping                      |
-| `model`            | string      | `"amazon-bedrock/us.anthropic.claude-opus-4-6-v1"` | Reviewer model (`"provider/model-id"`)                            |
-| `thinkingLevel`    | string      | `"off"`                                            | `off\|minimal\|low\|medium\|high\|xhigh`                          |
-| `architectEnabled` | boolean     | `true`                                             | Enable architect review (triggers when >1 file reviewed from git) |
-| `reviewTimeoutMs`  | integer > 0 | `120000`                                           | Max wall-clock per review in ms                                   |
-| `toggleShortcut`   | string      | `"alt+r"`                                          | Key id for toggling review on/off                                 |
-| `cancelShortcut`   | string      | `""` (none)                                        | Key id for cancelling review (opt-in, see below)                  |
+| Setting            | Type        | Default                                                        | Description                                                                                |
+| ------------------ | ----------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `maxReviewLoops`   | integer > 0 | `100`                                                          | Max review→fix→review cycles before stopping                                               |
+| `model`            | string      | `"amazon-bedrock/us.anthropic.claude-opus-4-6-v1"`             | Reviewer model (`"provider/model-id"`)                                                     |
+| `thinkingLevel`    | string      | `"off"`                                                        | `off\|minimal\|low\|medium\|high\|xhigh`                                                   |
+| `architectEnabled` | boolean     | `true`                                                         | Enable architect review (triggers when >1 file reviewed from git)                          |
+| `reviewTimeoutMs`  | integer > 0 | `120000`                                                       | Max wall-clock per review in ms                                                            |
+| `toggleShortcut`   | string      | `"alt+r"`                                                      | Key id for toggling review on/off                                                          |
+| `judgeEnabled`     | boolean     | `false`                                                        | Opt-in LLM gate that suppresses redundant reviews on read-only turns (see [Judge](#judge)) |
+| `judgeModel`       | string      | `"amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0"` | Model used by the judge (`"provider/model-id"`)                                            |
+| `judgeTimeoutMs`   | integer > 0 | `10000`                                                        | Max wall-clock per judge classification call in ms                                         |
+| `cancelShortcut`   | string      | `""` (none)                                                    | Key id for cancelling review (opt-in, see below)                                           |
 
 > **Note:** `roundupEnabled` is accepted as a legacy alias for `architectEnabled`.
 
@@ -204,6 +210,30 @@ The architect review:
 - Uses tools (`read`, `bash`, `grep`, `find`, `ls`) to explore the full codebase
 
 Disable with `"architectEnabled": false` in settings.
+
+## Judge
+
+The **judge** is an opt-in duplicate-review suppressor. When enabled, it runs a cheap classifier LLM (default: Claude Haiku 4.5) on each bash tool call the agent made this turn. If every bash call classifies as `inspection_vcs_noop` (reads state only — `git status`, `git log`, `echo`, inspection compounds, etc.) **and** no `write`/`edit` tool call ran, the full review is skipped with reason `judge_read_only`.
+
+**Why it exists:** the deterministic classifier in `changes.ts` uses a static allowlist. Commands using shell builtins outside the allowlist (e.g. `echo` in a compound) get flagged as "potentially modifying" and trigger an unnecessary review of already-reviewed content. The judge catches those false positives.
+
+**Fail-safe by design:**
+
+- Off by default.
+- Fail-open: any judge error (timeout, transport, parse) → review runs as normal.
+- `unsure` classification → review runs (same as "modifying").
+- Any `write`/`edit` tool call skips the judge entirely and goes straight to review.
+- A kill switch: set `"judgeEnabled": false` to disable instantly.
+
+**Enable in `.lgtm/settings.json`:**
+
+```json
+{
+  "judgeEnabled": true
+}
+```
+
+See `eval/RESULTS.md` for the evaluation that picked Haiku 4.5.
 
 ## What triggers a review
 

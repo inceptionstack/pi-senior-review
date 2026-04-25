@@ -12,6 +12,7 @@ pi-lgtm/
 ├── orchestrator.ts       ← Auto-review state machine & sequencing (~420 lines)
 ├── commands.ts           ← Manual review commands (/review N, /review-all, etc.)
 ├── reviewer.ts           ← Spawns pi session, runs review, parses verdict
+├── judge.ts              ← Opt-in bash-command classifier (duplicate-review suppressor)
 ├── message-sender.ts     ← sendReviewResult — formats & sends review messages
 ├── context.ts            ← Builds review content (4 fallback paths)
 ├── changes.ts            ← Change detection, tool call classification
@@ -25,7 +26,7 @@ pi-lgtm/
 ├── review-display.ts     ← TUI widget (ASCII art + file progress)
 ├── scaffold.ts           ← Template content for /scaffold-review-files
 ├── default-review-rules.md ← Default review criteria (OWASP, SOLID, DRY, etc.)
-├── test/                 ← 307 tests across 12 files (vitest)
+├── test/                 ← 337 tests across 13 files (vitest)
 └── .lgtm/       ← Local config (settings.json, review-rules.md, etc.)
 ```
 
@@ -151,7 +152,7 @@ Triggers automatically when >1 file was reviewed across the session AND content 
 - Tests use vitest (`describe`, `it`, `expect`)
 - Test names follow descriptive pattern: `functionName > scenario > expected behavior`
 - Pure functions are tested directly; I/O-heavy functions are tested with mocks
-- 307 tests across 12 test files (including orchestrator state machine tests)
+- 337 tests across 13 test files (including orchestrator state machine tests)
 
 ## Common modification scenarios
 

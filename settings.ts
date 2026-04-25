@@ -65,6 +65,14 @@ export interface AutoReviewSettings {
   reviewTimeoutMs: number; // Max wall-clock for a single review (default 120s)
   toggleShortcut: string; // Key id for toggling review on/off (default "alt+r")
   cancelShortcut: string; // Key id for cancelling in-progress review (default: none — use /cancel-review)
+  /** Duplicate-review suppressor ("judge") — see judge.ts. Off by default so
+   *  users opt in. When enabled and all bash commands in a turn classify as
+   *  read-only, the auto-review is skipped entirely. */
+  judgeEnabled: boolean;
+  /** Model used by the judge. Chosen from `eval/RESULTS.md`. */
+  judgeModel: string;
+  /** Max wall-clock per judge classification call (default 10s). */
+  judgeTimeoutMs: number;
 }
 
 /** Shortcut-only settings loaded synchronously at init (before session_start). */
@@ -84,6 +92,9 @@ export const DEFAULT_SETTINGS: AutoReviewSettings = {
   reviewTimeoutMs: 120_000,
   toggleShortcut: DEFAULT_TOGGLE_SHORTCUT,
   cancelShortcut: DEFAULT_CANCEL_SHORTCUT,
+  judgeEnabled: false,
+  judgeModel: "amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+  judgeTimeoutMs: 10_000,
 };
 
 export const VALID_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
@@ -190,6 +201,40 @@ export function parseSettings(parsed: Record<string, unknown>): {
     } else {
       errors.push(
         `[lgtm] "cancelShortcut" must be a string key id (got ${JSON.stringify(parsed.cancelShortcut)}). Using default: ${DEFAULT_SETTINGS.cancelShortcut}.`,
+      );
+    }
+  }
+
+  if ("judgeEnabled" in parsed) {
+    if (typeof parsed.judgeEnabled === "boolean") {
+      settings.judgeEnabled = parsed.judgeEnabled;
+    } else {
+      errors.push(
+        `[lgtm] "judgeEnabled" must be a boolean (got ${JSON.stringify(parsed.judgeEnabled)}). Using default: ${DEFAULT_SETTINGS.judgeEnabled}.`,
+      );
+    }
+  }
+
+  if ("judgeModel" in parsed) {
+    if (typeof parsed.judgeModel === "string" && parsed.judgeModel.includes("/")) {
+      settings.judgeModel = parsed.judgeModel;
+    } else {
+      errors.push(
+        `[lgtm] "judgeModel" must be "provider/model-id" (got ${JSON.stringify(parsed.judgeModel)}). Using default: ${DEFAULT_SETTINGS.judgeModel}.`,
+      );
+    }
+  }
+
+  if ("judgeTimeoutMs" in parsed) {
+    if (
+      typeof parsed.judgeTimeoutMs === "number" &&
+      Number.isInteger(parsed.judgeTimeoutMs) &&
+      parsed.judgeTimeoutMs > 0
+    ) {
+      settings.judgeTimeoutMs = parsed.judgeTimeoutMs;
+    } else {
+      errors.push(
+        `[lgtm] "judgeTimeoutMs" must be a positive integer (got ${JSON.stringify(parsed.judgeTimeoutMs)}). Using default: ${DEFAULT_SETTINGS.judgeTimeoutMs}.`,
       );
     }
   }

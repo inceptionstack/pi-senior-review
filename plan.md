@@ -23,7 +23,7 @@ New design topics captured during a working session; **none implemented yet**, a
 
 **Tests to add:** snapshot test in `test/review-display.test.ts` asserting the initial frame is the furrowed one.
 
-**Status:** [ ] designing
+**Status:** [x] Done (commit `d055843`) — picked option 2 (tie animation to activity) + seed furrowed. `animFrame` starts at 1 (furrowed frame); timer only ticks spinner; `recordToolCall` advances frame when `activeFile` changes; `setArchitectMode` resets to furrowed.
 
 ## D2. Widget truncation when >5 reviewed files
 

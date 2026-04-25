@@ -32,6 +32,7 @@ import {
   loadShortcutSettingsSync,
 } from "./settings";
 import { runReviewSession } from "./reviewer";
+import { classifyBashCommand, defaultJudgeRunner } from "./judge";
 import { sendReviewResult, formatReviewIdFooter } from "./message-sender";
 import { type TrackedToolCall, isFileModifyingTool, collectModifiedPaths } from "./changes";
 import { getBestReviewContent } from "./context";
@@ -84,6 +85,11 @@ export default function (pi: ExtensionAPI) {
         input.gitRoots,
         input.limits,
       ),
+    // Judge wiring: closure over the default runner so the orchestrator
+    // stays test-mockable (tests pass their own `judge` fn). When the user
+    // hasn't enabled `judgeEnabled` in settings, the orchestrator skips
+    // this entirely — zero runtime cost.
+    judge: (command, opts) => classifyBashCommand(defaultJudgeRunner, command, opts),
   });
 
   // ── Helpers ──────────────────────────────────────

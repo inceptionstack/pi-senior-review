@@ -422,4 +422,166 @@ describe("ReviewOrchestrator", () => {
     expect(outcome.type).toBe("completed");
     expect(runner).toHaveBeenCalledTimes(2);
   });
+
+  describe("judge gate", () => {
+    it("does nothing when judgeEnabled=false (default)", async () => {
+      const judge = vi.fn(async () => "inspection_vcs_noop" as const);
+      const orchestrator = new ReviewOrchestrator({
+        runner: mockRunner(true),
+        contentBuilder: mockContentBuilder(longContent()),
+        judge,
+      });
+      const outcome = await orchestrator.handleAgentEnd(
+        baseInput({
+          // Compound with `echo` — static classifier flags as modifying (echo
+          // isn't in its allowlist) so we do reach the judge gate.
+          agentToolCalls: [
+            { name: "bash", input: { command: 'git status && echo "---" && git log' } },
+          ],
+          modifiedFiles: new Set(["src/file.ts"]),
+          settings: baseSettings({ judgeEnabled: false }),
+        }),
+      );
+      // Judge should NOT be called when the feature is off.
+      expect(judge).not.toHaveBeenCalled();
+      expect(outcome.type).toBe("completed");
+    });
+
+    it("skips when all bash commands classify as inspection_vcs_noop", async () => {
+      const judge = vi.fn(async () => "inspection_vcs_noop" as const);
+      const runner = mockRunner(true);
+      const orchestrator = new ReviewOrchestrator({
+        runner,
+        contentBuilder: mockContentBuilder(longContent()),
+        judge,
+      });
+      const outcome = await orchestrator.handleAgentEnd(
+        baseInput({
+          // Two compounds with `echo` — both deterministic-flag as modifying,
+          // both actually safe. The judge is supposed to override here.
+          agentToolCalls: [
+            { name: "bash", input: { command: 'echo "start" && git status' } },
+            { name: "bash", input: { command: 'git log --oneline -5 && echo "done"' } },
+          ],
+          modifiedFiles: new Set(["src/file.ts"]),
+          settings: baseSettings({ judgeEnabled: true }),
+        }),
+      );
+      expect(outcome).toEqual({ type: "skipped", reason: "judge_read_only" });
+      expect(judge).toHaveBeenCalledTimes(2);
+      expect(runner).not.toHaveBeenCalled();
+    });
+
+    it("runs the review when any command classifies as modifying", async () => {
+      const calls: string[] = [];
+      const judge: import("../orchestrator").JudgeClassifier = async (cmd) => {
+        calls.push(cmd);
+        return calls.length === 1 ? "inspection_vcs_noop" : "modifying";
+      };
+      const runner = mockRunner(true);
+      const orchestrator = new ReviewOrchestrator({
+        runner,
+        contentBuilder: mockContentBuilder(longContent()),
+        judge,
+      });
+      const outcome = await orchestrator.handleAgentEnd(
+        baseInput({
+          agentToolCalls: [
+            { name: "bash", input: { command: "echo ok && git status" } },
+            { name: "bash", input: { command: "npm run build" } },
+          ],
+          modifiedFiles: new Set(["src/file.ts"]),
+          settings: baseSettings({ judgeEnabled: true }),
+        }),
+      );
+      expect(outcome.type).toBe("completed");
+      expect(runner).toHaveBeenCalledTimes(1);
+      // Short-circuits once `modifying` is seen; doesn't classify later commands.
+      expect(calls).toEqual(["echo ok && git status", "npm run build"]);
+    });
+
+    it("runs the review when any command classifies as unsure (fail-open)", async () => {
+      const judge = vi.fn(async () => "unsure" as const);
+      const runner = mockRunner(true);
+      const orchestrator = new ReviewOrchestrator({
+        runner,
+        contentBuilder: mockContentBuilder(longContent()),
+        judge,
+      });
+      const outcome = await orchestrator.handleAgentEnd(
+        baseInput({
+          agentToolCalls: [{ name: "bash", input: { command: "./deploy.sh" } }],
+          modifiedFiles: new Set(["src/file.ts"]),
+          settings: baseSettings({ judgeEnabled: true }),
+        }),
+      );
+      expect(outcome.type).toBe("completed");
+      expect(runner).toHaveBeenCalledTimes(1);
+    });
+
+    it("bypasses the judge when any write/edit tool call happened", async () => {
+      const judge = vi.fn(async () => "inspection_vcs_noop" as const);
+      const runner = mockRunner(true);
+      const orchestrator = new ReviewOrchestrator({
+        runner,
+        contentBuilder: mockContentBuilder(longContent()),
+        judge,
+      });
+      const outcome = await orchestrator.handleAgentEnd(
+        baseInput({
+          agentToolCalls: [
+            { name: "write", input: { path: "src/new.ts", content: "export {};" } },
+            { name: "bash", input: { command: "echo hi && git status" } },
+          ],
+          modifiedFiles: new Set(["src/new.ts", "src/file.ts"]),
+          settings: baseSettings({ judgeEnabled: true }),
+        }),
+      );
+      // write+edit means we're definitely modifying; skip the judge entirely.
+      expect(judge).not.toHaveBeenCalled();
+      expect(outcome.type).toBe("completed");
+      expect(runner).toHaveBeenCalledTimes(1);
+    });
+
+    it("fails open and runs the review when the judge throws", async () => {
+      // The judge's public contract is to never reject (fail-safe to `unsure`).
+      // Simulate a broken judge that DOES reject to verify the orchestrator's
+      // try/catch around the gate catches the error and proceeds with review.
+      const judge = vi.fn(async () => {
+        throw new Error("judge crashed");
+      });
+      const runner = mockRunner(true);
+      const orchestrator = new ReviewOrchestrator({
+        runner,
+        contentBuilder: mockContentBuilder(longContent()),
+        judge,
+      });
+      const outcome = await orchestrator.handleAgentEnd(
+        baseInput({
+          agentToolCalls: [{ name: "bash", input: { command: "echo hi && git status" } }],
+          modifiedFiles: new Set(["src/file.ts"]),
+          settings: baseSettings({ judgeEnabled: true }),
+        }),
+      );
+      expect(outcome.type).toBe("completed");
+      expect(runner).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not run when no judge is injected, even if judgeEnabled=true", async () => {
+      const orchestrator = new ReviewOrchestrator({
+        runner: mockRunner(true),
+        contentBuilder: mockContentBuilder(longContent()),
+        // no `judge` key
+      });
+      const outcome = await orchestrator.handleAgentEnd(
+        baseInput({
+          agentToolCalls: [{ name: "bash", input: { command: "echo hi && git status" } }],
+          modifiedFiles: new Set(["src/file.ts"]),
+          settings: baseSettings({ judgeEnabled: true }),
+        }),
+      );
+      // No judge fn means we simply can't gate. Proceed with review.
+      expect(outcome.type).toBe("completed");
+    });
+  });
 });

@@ -4,6 +4,7 @@ import { type ContentSizeLimits, FALLBACK_LIMITS, type ReviewContent } from "./c
 import { hasFileChanges, isFormattingOnlyTurn, collectModifiedPaths } from "./changes";
 import type { TrackedToolCall } from "./changes";
 import { createReviewId, computeReviewTimeoutMs } from "./helpers";
+import type { BashClassification } from "./judge";
 import { buildReviewPrompt } from "./prompt";
 import type { AutoReviewSettings } from "./settings";
 import { runArchitectReview, shouldRunArchitectReview } from "./architect";
@@ -69,11 +70,34 @@ export interface ReviewOrchestratorInput {
 export interface ReviewOrchestratorOptions {
   runner: ReviewRunner;
   contentBuilder: ContentBuilder;
+  /**
+   * Optional duplicate-review suppressor ("judge"). When provided AND
+   * `settings.judgeEnabled` is true, the orchestrator asks the judge to
+   * classify each bash tool call before building content. If ALL bash calls
+   * classify as `inspection_vcs_noop` and no write/edit tool calls happened,
+   * the review is skipped with reason="judge_read_only".
+   *
+   * Injected (not hard-imported) so tests can mock without touching the SDK.
+   * Fail-open: missing judge, judge throws, or judge returns `modifying`/`unsure`
+   * for any command → the review runs as normal.
+   */
+  judge?: JudgeClassifier;
 }
+
+/**
+ * Classifier contract the orchestrator expects. Implementations must always
+ * resolve (never reject); failures map to `"unsure"` which is treated as
+ * "run the review". See `judge.ts` for the production implementation.
+ */
+export type JudgeClassifier = (
+  command: string,
+  opts: { signal: AbortSignal; cwd: string; model: string; timeoutMs: number },
+) => Promise<BashClassification>;
 
 export class ReviewOrchestrator {
   private readonly runner: ReviewRunner;
   private readonly contentBuilder: ContentBuilder;
+  private readonly judge?: JudgeClassifier;
 
   private reviewAbort: AbortController | null = null;
   private isReviewingValue = false;
@@ -90,6 +114,7 @@ export class ReviewOrchestrator {
   constructor(opts: ReviewOrchestratorOptions) {
     this.runner = opts.runner;
     this.contentBuilder = opts.contentBuilder;
+    this.judge = opts.judge;
   }
 
   get isReviewing(): boolean {
@@ -152,6 +177,25 @@ export class ReviewOrchestrator {
     if (realFiles.size === 0) {
       log("skipping review: no real file paths found");
       return { type: "skipped", reason: "no_real_files" };
+    }
+
+    // Judge gate: if enabled, ask a cheap LLM to classify each bash command.
+    // If they're all read-only AND no write/edit tool call ran, skip the
+    // full review entirely. See judge.ts + eval/RESULTS.md for the pick.
+    if (input.settings.judgeEnabled && this.judge) {
+      const abort = (this.reviewAbort = new AbortController());
+      try {
+        const skip = await this.isTurnReadOnlyViaJudge(input, abort.signal);
+        if (skip) {
+          log("skipping review: judge classified turn as read-only");
+          return { type: "skipped", reason: "judge_read_only" };
+        }
+      } catch (err: any) {
+        // Fail-open: any judge-gate error → proceed with the normal review.
+        log(`judge gate failed (${err?.message ?? err}) — proceeding with review`);
+      } finally {
+        this.reviewAbort = null;
+      }
     }
 
     this.loopCount++;
@@ -377,6 +421,55 @@ export class ReviewOrchestrator {
       this.architectDone = false;
       this.sessionHasGitContent = false;
     }
+  }
+
+  /**
+   * Ask the judge to classify each bash tool call in this turn. Returns true
+   * only if the turn is confidently read-only:
+   *   - No write/edit tool calls happened.
+   *   - Every bash command classified as `inspection_vcs_noop`.
+   *
+   * Fail-open: any individual classification that returns `unsure` or
+   * `modifying` (or throws, which is mapped to `unsure` inside
+   * `classifyBashCommand`) flips the answer back to "run the review".
+   *
+   * Serial invocation keeps rate-limit risk low. Most real turns have <5
+   * bash calls, so the latency cost is <~5s for the skip case — negligible
+   * compared to the 30-90s main review we're avoiding.
+   */
+  private async isTurnReadOnlyViaJudge(
+    input: ReviewOrchestratorInput,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    if (!this.judge) return false;
+
+    // Any explicit write/edit tool call is an unambiguous modification.
+    // Don't waste a judge call on those — go straight to review.
+    for (const tc of input.agentToolCalls) {
+      if (tc.name === "write" || tc.name === "edit") return false;
+    }
+
+    const bashCalls = input.agentToolCalls.filter((tc) => tc.name === "bash");
+    if (bashCalls.length === 0) {
+      // No bash and no write/edit, but we got past `realFiles.size === 0`,
+      // so something else pushed files into the set. Safer to review.
+      return false;
+    }
+
+    for (const tc of bashCalls) {
+      const cmd = String(tc.input?.command ?? "").trim();
+      if (!cmd) continue;
+      const classification = await this.judge(cmd, {
+        signal,
+        cwd: input.cwd,
+        model: input.settings.judgeModel,
+        timeoutMs: input.settings.judgeTimeoutMs,
+      });
+      log(`judge: ${classification} ← ${cmd.slice(0, 80).replace(/\n/g, " ")}`);
+      if (classification !== "inspection_vcs_noop") return false;
+      if (signal.aborted) return false;
+    }
+    return true;
   }
 
   private resetCycleState(): void {

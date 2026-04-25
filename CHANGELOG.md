@@ -4,6 +4,7 @@
 
 ### Features
 
+- **Duplicate-review suppressor ("judge")** — New opt-in gate that asks a cheap LLM (default: Claude Haiku 4.5 via Bedrock) to classify each bash tool call as `inspection_vcs_noop` | `modifying` | `unsure`. If every bash call in a turn is read-only (and no write/edit happened), the main review is skipped with reason `judge_read_only`. Fixes the spurious re-review after `git add && git commit && git push` turns where the deterministic classifier falsely flags `echo` as modifying. Fail-open: any judge error (timeout, transport, parse) → review runs as normal. Off by default; enable via `judgeEnabled: true` in `.lgtm/settings.json`. New module `judge.ts` + `judgeEnabled`/`judgeModel`/`judgeTimeoutMs` settings. Model pick backed by the eval harness under `eval/` (zero false-noops in 630 calls across two runs).
 - **Review timeout in widget header** — Both senior and architect review widgets now show the effective wall-clock budget alongside elapsed time (e.g. `45s/4m`) and a subline hint that the reviewer may take up to that long. Makes it obvious when a long review is expected vs. stuck.
 - **Push guard** — Automatically blocks `git push` when review is needed: during active review, when issues are unresolved, or when files are pending review. Shows `🔒 push blocked` in the status bar. Respects review enabled/disabled state. ([README: Push guard](README.md#push-guard))
 - **Skip status** — Status bar shows "skipped — no files to review" (or other reason) when auto-review skips, persists until real file activity replaces it.

@@ -528,6 +528,23 @@ export default function (pi: ExtensionAPI) {
             { triggerTurn: true, deliverAs: "followUp" },
           );
         }
+
+        // Judge skips are worth surfacing in chat, not just the status bar:
+        // (a) the judge actually did work (an LLM call) — the user should see
+        //     their opt-in feature operate
+        // (b) the status bar is transient; chat is a persistent audit trail
+        // No triggerTurn: the user was already at a stopping point when the
+        // review would have fired; we don't want to re-run the agent.
+        if (outcome.reason === "judge_read_only") {
+          pi.sendMessage(
+            {
+              customType: "code-review",
+              content: `⚖️ **Review skipped by judge** — all bash commands this turn classified as read-only (no file mutation). Skipping the main review.\n\n_Model: \`${settings.judgeModel.split("/").pop()}\` — toggle with \`/review-judge-toggle\`_`,
+              display: true,
+            },
+            { triggerTurn: false, deliverAs: "followUp" },
+          );
+        }
         return;
       }
       case "cancelled":

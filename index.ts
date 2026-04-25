@@ -134,8 +134,8 @@ export default function (pi: ExtensionAPI) {
     ctx: { ui: any; hasUI?: boolean },
     files: string[],
   ): { onActivity: (desc: string) => void; onToolCall: (toolName: string, targetPath: string | null) => void } {
-    const statusOnly = (desc: string) => updateStatus(ctx, desc);
-    if (!ctx.hasUI) return { onActivity: statusOnly, onToolCall: () => {} };
+    const noOp = () => {};
+    if (!ctx.hasUI) return { onActivity: noOp, onToolCall: noOp };
 
     reviewDisplay = startReviewDisplay(ctx.ui, {
       files,
@@ -155,7 +155,6 @@ export default function (pi: ExtensionAPI) {
 
     return {
       onActivity: (desc: string) => {
-        updateStatus(ctx, desc);
         if (reviewDisplay) reviewDisplay.update({ activity: desc });
       },
       onToolCall: (toolName: string, targetPath: string | null) => {
@@ -193,16 +192,6 @@ export default function (pi: ExtensionAPI) {
     updateStatus(ctx);
   }
 
-  let lastActivity = "";
-  let activityTimer: ReturnType<typeof setTimeout> | undefined;
-
-  function clearActivityTimer() {
-    if (activityTimer) {
-      clearTimeout(activityTimer);
-      activityTimer = undefined;
-    }
-    lastActivity = "";
-  }
 
   /**
    * Clean up after a review completes (success, error, or cancel).
@@ -211,7 +200,6 @@ export default function (pi: ExtensionAPI) {
   function finishReview(ctx: { ui: any; hasUI?: boolean }, resetTracking = true) {
     isReviewing = false;
     reviewAbort = null;
-    clearActivityTimer();
     if (reviewDisplay) {
       reviewDisplay.stop();
       reviewDisplay = null;
@@ -223,35 +211,19 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  function updateStatus(ctx: { ui: any; hasUI?: boolean }, activity?: string) {
+  function updateStatus(ctx: { ui: any; hasUI?: boolean }) {
     if (!ctx.hasUI || !ctx.ui) return;
     const theme = ctx.ui.theme;
     const label = theme.fg("accent", "senior-review");
     const state = reviewEnabled ? theme.fg("success", "on") : theme.fg("dim", "off");
 
     if (isReviewing) {
-      // Activity lingers for 1s so you can read it
-      if (activity) {
-        lastActivity = activity;
-        if (activityTimer) clearTimeout(activityTimer);
-        // Note: setTimeout captures ctx — safe because clearActivityTimer()
-        // is called in all review-end paths before ctx can change.
-        activityTimer = setTimeout(() => {
-          lastActivity = "";
-          updateStatus(ctx);
-        }, 1000);
-      }
-      const displayActivity = activity ?? lastActivity;
-      const loopInfo = theme.fg("dim", `[${reviewLoopCount}/${settings.maxReviewLoops}]`);
-      const modelName = (settings.model || "").split("/").pop() ?? "";
-      const modelInfo = theme.fg("dim", modelName);
-      const activityInfo = displayActivity ? ` ${theme.fg("muted", displayActivity)}` : "";
       const cancelHint = shortcutConfig.cancelShortcut
         ? `${shortcutConfig.cancelShortcut} or /cancel-review`
         : "/cancel-review";
       ctx.ui.setStatus(
         "code-review",
-        `${label} ${theme.fg("warning", "reviewing…")} ${loopInfo} ${modelInfo}${activityInfo} ${theme.fg("dim", `(${cancelHint})`)}`,
+        `${label} ${theme.fg("warning", "reviewing…")} ${theme.fg("dim", `(${cancelHint})`)}`,
       );
       return;
     }
@@ -340,7 +312,7 @@ export default function (pi: ExtensionAPI) {
               const best = await getBestReviewContent(
                 pi,
                 agentToolCalls,
-                (msg) => updateStatus(ctx, msg),
+                (msg) => updateStatus(ctx),
                 ignorePatterns ?? undefined,
                 allRoots,
               );
@@ -353,7 +325,7 @@ export default function (pi: ExtensionAPI) {
               );
 
               if (best) {
-                updateStatus(ctx, "analyzing…");
+                updateStatus(ctx);
                 const { onActivity, onToolCall } = startReviewWidget(ctx, best.files);
                 const prompt = `${buildReviewPrompt(autoReviewRules, customRules, lastUserMessage)}\n\n---\n\n${best.content}`;
                 log("prompt length:", prompt.length);
@@ -540,7 +512,7 @@ export default function (pi: ExtensionAPI) {
       let best = await getBestReviewContent(
         pi,
         agentToolCalls,
-        (msg) => updateStatus(ctx, msg),
+        undefined,
         ignorePatterns ?? undefined,
         allRoots,
       );
@@ -561,7 +533,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      updateStatus(ctx, "analyzing…");
+      updateStatus(ctx);
       const { onActivity, onToolCall } = startReviewWidget(ctx, best.files);
       log(
         `Reviewing ${best.files.length} files via ${best.label || "git diff"}: ${best.files.join(", ")}`,
@@ -578,7 +550,7 @@ export default function (pi: ExtensionAPI) {
         log("Context overflow, retrying with fallback limits");
         onActivity("retrying with smaller context…");
         const smallBest = await getBestReviewContent(
-          pi, agentToolCalls, (msg) => updateStatus(ctx, msg),
+          pi, agentToolCalls, undefined,
           ignorePatterns ?? undefined, allRoots, FALLBACK_LIMITS,
         );
         if (!smallBest || smallBest.content.trim().length < MIN_REVIEW_CONTENT_LENGTH) {
@@ -612,7 +584,7 @@ export default function (pi: ExtensionAPI) {
         if (settings.architectEnabled && !architectDone && shouldRunArchitectReview([...sessionChangedFiles], sessionHasGitContent)) {
           architectDone = true;
           log(`architect: running — ${sessionChangedFiles.size} files reviewed across session`);
-          updateStatus(ctx, "architect review…");
+          updateStatus(ctx);
 
           // Switch widget to architect mode with inferred architecture diagram
           if (reviewDisplay) {
@@ -633,7 +605,6 @@ export default function (pi: ExtensionAPI) {
               customRules: architectRules,
               sessionChangeSummary: summaryText,
               onActivity: (desc) => {
-                updateStatus(ctx, `architect: ${desc}`);
                 if (reviewDisplay) reviewDisplay.update({ activity: `architect: ${desc}` });
               },
               onToolCall: (toolName, targetPath) => {
@@ -726,7 +697,6 @@ export default function (pi: ExtensionAPI) {
       sessionChangeSummaries = [];
       sessionChangedFiles = new Set();
       sessionHasGitContent = false;
-      clearActivityTimer();
       if (reviewDisplay) {
         reviewDisplay.stop();
         reviewDisplay = null;

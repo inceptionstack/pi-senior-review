@@ -197,13 +197,17 @@ export default function (pi: ExtensionAPI) {
       (orchestrator.isReviewing || orchestrator.lastHadIssues || hasPendingFiles());
     const pushTag = pushBlocked ? ` ${theme.fg("error", "🔒 push blocked")}` : "";
 
+    // Judge indicator. Dim when on (it's a subtle assist); hidden when off.
+    // `⚖` (scales) reads as "judge" without needing a word.
+    const judgeTag = settings.judgeEnabled ? ` ${theme.fg("dim", "⚖ judge")}` : "";
+
     if (manualReviews?.isReviewing || orchestrator.isReviewing) {
       const cancelHint = shortcutConfig.cancelShortcut
         ? `${shortcutConfig.cancelShortcut} or /cancel-review`
         : "/cancel-review";
       ui.setStatus(
         "code-review",
-        `${label} ${theme.fg("warning", "reviewing…")}${pushTag} ${theme.fg("dim", `(${cancelHint})`)}`,
+        `${label} ${theme.fg("warning", "reviewing…")}${pushTag}${judgeTag} ${theme.fg("dim", `(${cancelHint})`)}`,
       );
       return;
     }
@@ -223,7 +227,7 @@ export default function (pi: ExtensionAPI) {
           : "";
         ui.setStatus(
           "code-review",
-          `${label} ${state}${issueIndicator}${pushTag} · ${verb} ${theme.fg("accent", String(count))} ${theme.fg("muted", count === 1 ? "file" : "files")} ${theme.fg("dim", "(Alt+R toggle)")}`,
+          `${label} ${state}${issueIndicator}${pushTag}${judgeTag} · ${verb} ${theme.fg("accent", String(count))} ${theme.fg("muted", count === 1 ? "file" : "files")} ${theme.fg("dim", "(Alt+R toggle)")}`,
         );
         return;
       }
@@ -234,7 +238,7 @@ export default function (pi: ExtensionAPI) {
       : "";
     ui.setStatus(
       "code-review",
-      `${label} ${state}${issueIndicator}${pushTag} ${theme.fg("dim", "(Alt+R toggle)")}`,
+      `${label} ${state}${issueIndicator}${pushTag}${judgeTag} ${theme.fg("dim", "(Alt+R toggle)")}`,
     );
   }
 
@@ -693,6 +697,30 @@ export default function (pi: ExtensionAPI) {
       } else {
         if (ctx.hasUI) ctx.ui.notify("No review in progress", "info");
       }
+    },
+  });
+
+  // ── /review-judge-toggle command ────────────────
+  //
+  // In-memory toggle for the duplicate-review suppressor. Does NOT persist
+  // to settings.json — matches the pattern of /review (Alt+R) which is also
+  // a session-level toggle. To make the change permanent, the user edits
+  // `.lgtm/settings.json` themselves.
+  pi.registerCommand("review-judge-toggle", {
+    description: "Toggle the duplicate-review suppressor (judge) for this session",
+    handler: async (_args, ctx) => {
+      settings.judgeEnabled = !settings.judgeEnabled;
+      const state = settings.judgeEnabled ? "on" : "off";
+      log(`judge toggled ${state} via /review-judge-toggle`);
+      if (ctx.hasUI) {
+        ctx.ui.notify(
+          settings.judgeEnabled
+            ? `Judge: on (skipping redundant reviews on read-only turns, using ${settings.judgeModel.split("/").pop()})`
+            : "Judge: off (every file-changing turn triggers a full review)",
+          "info",
+        );
+      }
+      updateStatus(ctx);
     },
   });
 

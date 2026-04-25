@@ -174,6 +174,7 @@ During reviews, an animated widget appears below the editor showing:
 | `/review N`               | Review the last N commits                                          |
 | `/review-all`             | Review all changes (pending diff → last commit → all files in cwd) |
 | `/cancel-review`          | Cancel an in-progress review (works during architect review)       |
+| `/review-judge-toggle`    | Toggle the duplicate-review suppressor (judge) for this session    |
 | `/scaffold-review-files`  | Create `.lgtm/` config templates in a git repo                     |
 | `/lgtm-rules`             | Edit `.lgtm/review-rules.md` in pi's built-in editor               |
 | `/add-review-rule <text>` | Prepend a custom rule to `.lgtm/review-rules.md`                   |

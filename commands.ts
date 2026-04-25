@@ -308,8 +308,7 @@ export function registerReviewCommands(opts: RegisterCommandsOptions): ManualRev
               diffArgs = ["HEAD~1", "HEAD"];
             }
 
-            const lastNames = await listDiffFiles(opts.pi, gitRoot, ...diffArgs);
-            reviewFiles = lastNames;
+            reviewFiles = await listDiffFiles(opts.pi, gitRoot, ...diffArgs);
 
             const ignorePatterns = opts.getIgnorePatterns();
             if (ignorePatterns && ignorePatterns.length > 0) {

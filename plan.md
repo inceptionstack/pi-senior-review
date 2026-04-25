@@ -102,7 +102,7 @@
 
 **Fix:** Extract each path:
 
-- `getContentFromGitRoots()` + private `buildRepoContext()` / `listDiffFiles()` / `listUntrackedFiles()`
+- `getContentFromGitRoots()` + `listDiffFiles()` (exported) / private `buildRepoContext()` / `listUntrackedFiles()`
 - `getContentFromCwd()`
 - `getContentFromLastCommit()`
 - `getContentFromToolCalls()`

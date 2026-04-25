@@ -718,6 +718,7 @@ export default function (pi: ExtensionAPI) {
       orchestrator.reset();
       detectedGitRoots.clear(); // full reset clears session-level state too
       skipStatusShowing = false;
+      consecutiveJudgeSkipTriggers = 0;
       if (reviewDisplay) {
         reviewDisplay.stop();
         reviewDisplay = null;
@@ -792,6 +793,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     orchestrator.reset();
     detectedGitRoots.clear(); // session-level: clear on new session
+    consecutiveJudgeSkipTriggers = 0;
 
     const [rules, autoRules, settingsResult, patterns, rRules] = await Promise.all([
       loadReviewRules(ctx.cwd),
@@ -829,6 +831,7 @@ export default function (pi: ExtensionAPI) {
     manualReviews?.cancel();
     orchestrator.cancel();
     skipStatusShowing = false;
+    consecutiveJudgeSkipTriggers = 0;
     if (reviewDisplay) {
       reviewDisplay.stop();
       reviewDisplay = null;

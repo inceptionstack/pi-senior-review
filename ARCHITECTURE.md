@@ -35,9 +35,9 @@ All arrows mean "imports from". No circular dependencies exist.
 
 ```
                     index.ts (pi wiring, UI, renderOutcome)
-                   /    |     |     \      \
-                  ▼     ▼     ▼      ▼      ▼
-      orchestrator.ts  commands.ts  message-sender.ts  review-display.ts
+                   /    |     |     \      \      \
+                  ▼     ▼     ▼      ▼      ▼      ▼
+      orchestrator.ts  commands.ts  message-sender.ts  review-display.ts  judge.ts
            |               |              |
            ├── reviewer.ts (injected)     ├── reviewer.ts (types)
            ├── context.ts  (injected)     └── logger.ts
@@ -45,8 +45,8 @@ All arrows mean "imports from". No circular dependencies exist.
            ├── prompt.ts               commands.ts
            ├── changes.ts                  ├── reviewer.ts (direct)
            ├── helpers.ts                  ├── context.ts
-           └── logger.ts                   ├── prompt.ts
-                                           ├── helpers.ts
+           ├── judge.ts (type only)        ├── prompt.ts
+           └── logger.ts                   ├── helpers.ts
                                            ├── ignore.ts
                                            └── scaffold.ts
 
@@ -57,6 +57,9 @@ All arrows mean "imports from". No circular dependencies exist.
             ├──────────► changes.ts
             │
             └──────────► logger.ts
+
+        judge.ts ────────► logger.ts        (plus @mariozechner/pi-coding-agent for
+                                           in-memory createAgentSession calls)
 
         architect.ts ──► settings.ts (readConfigFile)
         ignore.ts    ──► settings.ts (readConfigFile)
@@ -204,6 +207,9 @@ agent modifies files
        ├── hasFileChanges? ── no → { type: "skipped" }
        ├── formattingOnly? ── yes → { type: "skipped" }
        ├── no real files?  ── yes → { type: "skipped" }
+       ├── judgeEnabled + judge says all bash cmds are `inspection_vcs_noop`?
+       │                    → yes → { type: "skipped", reason: "judge_read_only" }
+       │    (see "Judge gate" below for details)
        │
        ▼
   Build content (injected ContentBuilder)
@@ -367,6 +373,25 @@ Cancellation sources:
 
 5. **Content deduplication**: A SHA-256 hash of the review content prevents re-reviewing identical changes across consecutive agent turns.
 
-6. **Architect review without gating**: Earlier designs had heuristics + LLM judge to gate architect reviews. Current design simply triggers for any multi-file git-based change — simpler and more predictable.
+6. **Architect review triggers unconditionally on multi-file git changes**: the architect step has no LLM judge or heuristic gate — it runs for any multi-file git-based change. An earlier design explored judging _whether the architect review should run_; that was dropped as unnecessary complexity. See point 8 for the related but distinct `judge.ts` module that gates the _senior_ review.
 
 7. **Synchronous logging**: All log writes are synchronous to guarantee output order and completeness, even during abrupt cancellation or error paths.
+
+8. **Duplicate-review suppressor (`judge.ts`)** — opt-in LLM classifier that sits between the deterministic classifier (`changes.ts`) and the main reviewer. It takes a single bash command string and returns `inspection_vcs_noop` | `modifying` | `unsure`. If the whole turn classifies as `inspection_vcs_noop` AND no `write`/`edit` tool call happened, the senior review is skipped. Fail-open: any error maps to `unsure` → review runs. Does NOT gate the architect review (see point 6). Injected into the orchestrator via the `JudgeClassifier` type so tests can mock without touching the SDK. Off by default; see [Judge](../README.md#judge).
+
+## Judge gate
+
+Triggered from `ReviewOrchestrator.handleAgentEnd` after the existing deterministic skip checks (`hasFileChanges`, `isFormattingOnlyTurn`, `realFiles.size === 0`) and **before** content building.
+
+```
+Any write/edit tool call?          → yes → skip judge, run review
+Bash tool calls?                   → no  → skip judge, run review
+For each bash call (serial):
+  judge.classify(command) → modifying | unsure  → short-circuit, run review
+                         → inspection_vcs_noop → continue
+All bash calls classified inspection_vcs_noop?
+  AND classifiedAny?               → yes → skip review, reason="judge_read_only"
+                                   → no  → run review (defensive)
+```
+
+`classifiedAny` guards against a degenerate case where every bash call has an empty or whitespace-only `command` field; without it, the loop would fall through to `return true` without any actual classification having run.

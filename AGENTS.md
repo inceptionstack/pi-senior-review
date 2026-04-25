@@ -26,7 +26,7 @@ pi-lgtm/
 ├── review-display.ts     ← TUI widget (ASCII art + file progress)
 ├── scaffold.ts           ← Template content for /scaffold-review-files
 ├── default-review-rules.md ← Default review criteria (OWASP, SOLID, DRY, etc.)
-├── test/                 ← 337 tests across 13 files (vitest)
+├── test/                 ← 352 tests across 13 files (vitest)
 └── .lgtm/       ← Local config (settings.json, review-rules.md, etc.)
 ```
 
@@ -152,7 +152,7 @@ Triggers automatically when >1 file was reviewed across the session AND content 
 - Tests use vitest (`describe`, `it`, `expect`)
 - Test names follow descriptive pattern: `functionName > scenario > expected behavior`
 - Pure functions are tested directly; I/O-heavy functions are tested with mocks
-- 337 tests across 13 test files (including orchestrator state machine tests)
+- 352 tests across 13 test files (including orchestrator state machine tests)
 
 ## Common modification scenarios
 

@@ -500,7 +500,9 @@ export default function (pi: ExtensionAPI) {
                   ? "formatting only"
                   : outcome.reason === "duplicate_content"
                     ? "no new changes"
-                    : null;
+                    : outcome.reason === "judge_read_only"
+                      ? "judge: read-only turn"
+                      : null;
           if (reason) {
             skipStatusShowing = true;
             ui.setStatus("code-review", `${label} ${theme.fg("dim", `skipped — ${reason}`)}`);

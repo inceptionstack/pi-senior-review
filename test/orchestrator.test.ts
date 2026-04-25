@@ -583,5 +583,36 @@ describe("ReviewOrchestrator", () => {
       // No judge fn means we simply can't gate. Proceed with review.
       expect(outcome.type).toBe("completed");
     });
+
+    it("does NOT skip when every bash call has an empty/missing command string", async () => {
+      // Regression for a previous bug: `if (!cmd) continue` skipped empty
+      // commands silently, which made the loop fall through to `return true`
+      // without actually classifying anything — causing a false "read-only"
+      // verdict on a turn where the judge never ran. The fix tracks whether
+      // any classification happened and returns false otherwise.
+      const judge = vi.fn(async () => "inspection_vcs_noop" as const);
+      const runner = mockRunner(true);
+      const orchestrator = new ReviewOrchestrator({
+        runner,
+        contentBuilder: mockContentBuilder(longContent()),
+        judge,
+      });
+      const outcome = await orchestrator.handleAgentEnd(
+        baseInput({
+          agentToolCalls: [
+            { name: "bash", input: { command: "" } },
+            { name: "bash", input: { command: "   " } },
+            { name: "bash", input: {} },
+          ],
+          modifiedFiles: new Set(["src/file.ts"]),
+          settings: baseSettings({ judgeEnabled: true }),
+        }),
+      );
+      // Judge never runs because there's nothing to classify, but we must
+      // NOT interpret "nothing classified" as "confidently read-only".
+      expect(judge).not.toHaveBeenCalled();
+      expect(outcome.type).toBe("completed");
+      expect(runner).toHaveBeenCalledTimes(1);
+    });
   });
 });

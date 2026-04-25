@@ -141,6 +141,9 @@ describe("parseSettings", () => {
       model: "openai/gpt-5",
       thinkingLevel: "high",
       architectEnabled: true,
+      judgeEnabled: true,
+      judgeModel: "amazon-bedrock/claude-haiku",
+      judgeTimeoutMs: 8000,
     };
     const { settings, errors } = parseSettings(input);
     expect(errors).toEqual([]);
@@ -148,6 +151,9 @@ describe("parseSettings", () => {
     expect(settings.model).toBe("openai/gpt-5");
     expect(settings.thinkingLevel).toBe("high");
     expect(settings.architectEnabled).toBe(true);
+    expect(settings.judgeEnabled).toBe(true);
+    expect(settings.judgeModel).toBe("amazon-bedrock/claude-haiku");
+    expect(settings.judgeTimeoutMs).toBe(8000);
   });
 
   it("parseSettings_MixOfValidAndInvalid_AppliesValidRejectsInvalid", () => {
@@ -252,6 +258,110 @@ describe("parseSettings", () => {
     });
     expect(settings.toggleShortcut).toBe("ctrl+r");
     expect(settings.cancelShortcut).toBe("ctrl+q");
+    expect(errors).toEqual([]);
+  });
+
+  // ── judgeEnabled ──
+
+  it("parseSettings_ValidJudgeEnabledTrue_Applies", () => {
+    const { settings, errors } = parseSettings({ judgeEnabled: true });
+    expect(settings.judgeEnabled).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  it("parseSettings_ValidJudgeEnabledFalse_Applies", () => {
+    const { settings, errors } = parseSettings({ judgeEnabled: false });
+    expect(settings.judgeEnabled).toBe(false);
+    expect(errors).toEqual([]);
+  });
+
+  it("parseSettings_NonBooleanJudgeEnabled_RejectsWithError", () => {
+    const { settings, errors } = parseSettings({ judgeEnabled: "yes" });
+    expect(settings.judgeEnabled).toBe(DEFAULT_SETTINGS.judgeEnabled);
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain("judgeEnabled");
+    expect(errors[0]).toContain("boolean");
+  });
+
+  it("parseSettings_NullJudgeEnabled_RejectsWithError", () => {
+    const { settings, errors } = parseSettings({ judgeEnabled: null });
+    expect(settings.judgeEnabled).toBe(DEFAULT_SETTINGS.judgeEnabled);
+    expect(errors.length).toBe(1);
+  });
+
+  // ── judgeModel ──
+
+  it("parseSettings_ValidJudgeModel_Applies", () => {
+    const { settings, errors } = parseSettings({
+      judgeModel: "amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    });
+    expect(settings.judgeModel).toBe("amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0");
+    expect(errors).toEqual([]);
+  });
+
+  it("parseSettings_JudgeModelWithoutSlash_RejectsWithError", () => {
+    const { settings, errors } = parseSettings({ judgeModel: "no-slash" });
+    expect(settings.judgeModel).toBe(DEFAULT_SETTINGS.judgeModel);
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain("judgeModel");
+    expect(errors[0]).toContain("provider/model-id");
+  });
+
+  it("parseSettings_NonStringJudgeModel_RejectsWithError", () => {
+    const { settings, errors } = parseSettings({ judgeModel: 42 });
+    expect(settings.judgeModel).toBe(DEFAULT_SETTINGS.judgeModel);
+    expect(errors.length).toBe(1);
+  });
+
+  it("parseSettings_EmptyJudgeModel_RejectsWithError", () => {
+    // Empty string has no "/" so it must reject.
+    const { settings, errors } = parseSettings({ judgeModel: "" });
+    expect(settings.judgeModel).toBe(DEFAULT_SETTINGS.judgeModel);
+    expect(errors.length).toBe(1);
+  });
+
+  // ── judgeTimeoutMs ──
+
+  it("parseSettings_ValidJudgeTimeoutMs_Applies", () => {
+    const { settings, errors } = parseSettings({ judgeTimeoutMs: 5000 });
+    expect(settings.judgeTimeoutMs).toBe(5000);
+    expect(errors).toEqual([]);
+  });
+
+  it("parseSettings_ZeroJudgeTimeoutMs_RejectsWithError", () => {
+    const { settings, errors } = parseSettings({ judgeTimeoutMs: 0 });
+    expect(settings.judgeTimeoutMs).toBe(DEFAULT_SETTINGS.judgeTimeoutMs);
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain("positive integer");
+  });
+
+  it("parseSettings_NegativeJudgeTimeoutMs_RejectsWithError", () => {
+    const { settings, errors } = parseSettings({ judgeTimeoutMs: -100 });
+    expect(settings.judgeTimeoutMs).toBe(DEFAULT_SETTINGS.judgeTimeoutMs);
+    expect(errors.length).toBe(1);
+  });
+
+  it("parseSettings_NonIntegerJudgeTimeoutMs_RejectsWithError", () => {
+    const { settings, errors } = parseSettings({ judgeTimeoutMs: 1500.5 });
+    expect(settings.judgeTimeoutMs).toBe(DEFAULT_SETTINGS.judgeTimeoutMs);
+    expect(errors.length).toBe(1);
+  });
+
+  it("parseSettings_NonNumberJudgeTimeoutMs_RejectsWithError", () => {
+    const { settings, errors } = parseSettings({ judgeTimeoutMs: "10000" });
+    expect(settings.judgeTimeoutMs).toBe(DEFAULT_SETTINGS.judgeTimeoutMs);
+    expect(errors.length).toBe(1);
+  });
+
+  it("parseSettings_AllJudgeFieldsTogether_AppliesAll", () => {
+    const { settings, errors } = parseSettings({
+      judgeEnabled: true,
+      judgeModel: "amazon-bedrock/claude-haiku-test",
+      judgeTimeoutMs: 7000,
+    });
+    expect(settings.judgeEnabled).toBe(true);
+    expect(settings.judgeModel).toBe("amazon-bedrock/claude-haiku-test");
+    expect(settings.judgeTimeoutMs).toBe(7000);
     expect(errors).toEqual([]);
   });
 });

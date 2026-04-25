@@ -456,6 +456,8 @@ export class ReviewOrchestrator {
       return false;
     }
 
+    let classifiedAny = false;
+
     for (const tc of bashCalls) {
       const cmd = String(tc.input?.command ?? "").trim();
       if (!cmd) continue;
@@ -468,8 +470,12 @@ export class ReviewOrchestrator {
       log(`judge: ${classification} ← ${cmd.slice(0, 80).replace(/\n/g, " ")}`);
       if (classification !== "inspection_vcs_noop") return false;
       if (signal.aborted) return false;
+      classifiedAny = true;
     }
-    return true;
+    // Safety: only return true if we actually classified at least one command.
+    // A turn with bash calls that all have empty command strings shouldn't be
+    // treated as "confidently read-only" — bail to review instead.
+    return classifiedAny;
   }
 
   private resetCycleState(): void {

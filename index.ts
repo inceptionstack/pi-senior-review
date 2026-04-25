@@ -294,11 +294,12 @@ export default function (pi: ExtensionAPI) {
             updateStatus(ctx);
             if (!reviewDisplay) return;
             const modules = inferArchModules(files);
+            const uiTheme = ctx.ui?.theme;
+            if (!uiTheme?.fg || !uiTheme?.bold) return;
             const theme = {
-              fg: ctx.ui?.theme?.fg as (c: string, t: string) => string,
-              bold: ctx.ui?.theme?.bold,
+              fg: uiTheme.fg.bind(uiTheme) as (c: string, t: string) => string,
+              bold: uiTheme.bold.bind(uiTheme) as (t: string) => string,
             };
-            if (!theme.fg || !theme.bold) return;
             const archDiagram = buildArchDiagram(modules, null, theme);
             reviewDisplay.setArchitectMode(files, archDiagram);
           } catch (err: any) {

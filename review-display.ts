@@ -363,6 +363,14 @@ export function startReviewDisplay(
   },
   initialState: ReviewDisplayState,
 ): ReviewDisplayHandle {
+  // Bind theme methods at capture time to avoid lost-context errors
+  // when the theme object's methods depend on `this`.
+  const boundTheme = {
+    fg: ui.theme.fg.bind(ui.theme) as (color: string, text: string) => string,
+    bold: ui.theme.bold.bind(ui.theme) as (text: string) => string,
+  };
+  const boundSetWidget = ui.setWidget.bind(ui) as typeof ui.setWidget;
+
   const state: ReviewDisplayState = {
     ...initialState,
     toolCounts: new Map(initialState.toolCounts),
@@ -376,8 +384,8 @@ export function startReviewDisplay(
   let timer: ReturnType<typeof setInterval> | undefined;
 
   function redraw() {
-    const lines = buildReviewWidget(state, animFrame, spinnerFrame, ui.theme);
-    ui.setWidget("senior-review-progress", lines, { placement: "belowEditor" });
+    const lines = buildReviewWidget(state, animFrame, spinnerFrame, boundTheme);
+    boundSetWidget("senior-review-progress", lines, { placement: "belowEditor" });
   }
 
   // Animate: tick every 150ms for spinner, toggle senior art every ~600ms
@@ -425,7 +433,7 @@ export function startReviewDisplay(
           state.archActiveModule = mod;
           // Rebuild the diagram with the new active module
           const modules = inferArchModules(state.files);
-          state.archDiagram = buildArchDiagram(modules, mod, ui.theme);
+          state.archDiagram = buildArchDiagram(modules, mod, boundTheme);
         }
       }
 
@@ -461,7 +469,7 @@ export function startReviewDisplay(
         clearInterval(timer);
         timer = undefined;
       }
-      ui.setWidget("senior-review-progress", undefined);
+      boundSetWidget("senior-review-progress", undefined);
     },
   };
 }

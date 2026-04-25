@@ -133,12 +133,29 @@ const NON_MODIFYING_COMMAND_ROOTS = new Set([
   "diff",
   "md5sum",
   "sha256sum",
+  "sha1sum",
   "xxd",
   "hexdump",
   "strings",
   "tree",
   "jq",
   "yq",
+  // Search / text processing (read-only)
+  "grep",
+  "egrep",
+  "fgrep",
+  "rg", // ripgrep
+  "ag", // the silver searcher
+  "ack",
+  "sort",
+  "uniq",
+  "cut",
+  "tr",
+  "awk",
+  "column",
+  "nl",
+  "test",
+  "[", // test alias
 ]);
 
 /** Single-part commands that are allowed in a chain without making it file-modifying. */
@@ -238,6 +255,9 @@ export function isFormattingOnlyTurn(toolCalls: TrackedToolCall[]): boolean {
  */
 function isNonModifyingPart(part: string): boolean {
   if (ALLOWED_NAVIGATION.test(part)) return true;
+
+  // Any output redirection to a file means the command modifies files
+  if (/[^>]>[^>]|>>/.test(part)) return false;
 
   // Git VCS read-only operations
   const gitMatch = part.match(/^git(?:\s+-C\s+\S+)?\s+(\w[\w-]*)/);

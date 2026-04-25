@@ -502,7 +502,7 @@ export async function getContentFromToolCalls(
   if (agentToolCalls.length === 0) return null;
 
   const candidatePaths = collectModifiedPaths(agentToolCalls);
-  const reviewedFiles: string[] = [];
+  let reviewedFiles: string[] = [];
 
   for (const filePath of candidatePaths) {
     if (isBinaryPath(filePath)) continue;
@@ -516,6 +516,68 @@ export async function getContentFromToolCalls(
     } catch {
       // skip unreadable files
     }
+  }
+
+  // Cross-check against git: for files inside a git repo, only keep them
+  // if they actually have uncommitted changes or are untracked. Files NOT in
+  // any git repo keep using the heuristic (exist + were in a modifying command).
+  // This prevents read-only commands (rg, grep, cat) from falsely including
+  // files they merely inspected.
+  if (reviewedFiles.length > 0) {
+    const verified: string[] = [];
+    // Cache git status per directory to avoid repeated calls
+    const statusCache = new Map<string, Set<string> | null>();
+
+    for (const f of reviewedFiles) {
+      // Find the git root for this file's directory
+      const dir = f.includes("/") ? f.slice(0, f.lastIndexOf("/")) || "." : ".";
+      if (!statusCache.has(dir)) {
+        const rootCheck = await pi.exec("git", ["-C", dir, "rev-parse", "--show-toplevel"], {
+          timeout: 3000,
+        });
+        if (rootCheck.code === 0) {
+          const root = rootCheck.stdout.trim();
+          // Check if we already have status for this root
+          const existingKey = [...statusCache.entries()].find(
+            ([, v]) => v !== null && statusCache.get(root) === v,
+          );
+          if (existingKey) {
+            statusCache.set(dir, statusCache.get(existingKey[0])!);
+          } else {
+            const gitStatus = await pi.exec("git", ["-C", root, "status", "--porcelain", "-uall"], {
+              timeout: 5000,
+            });
+            const changed =
+              gitStatus.code === 0
+                ? new Set(
+                    gitStatus.stdout
+                      .trim()
+                      .split("\n")
+                      .filter(Boolean)
+                      .map((line) => {
+                        const rel = line.slice(3).trim();
+                        return `${root}/${rel}`;
+                      }),
+                  )
+                : null; // git failed — treat as non-git
+            statusCache.set(dir, changed);
+          }
+        } else {
+          statusCache.set(dir, null); // Not in a git repo
+        }
+      }
+
+      const changed = statusCache.get(dir) ?? null;
+      if (changed === null) {
+        // Not in a git repo — keep using heuristic
+        verified.push(f);
+      } else if (changed.has(f) || [...changed].some((c) => f.endsWith(c) || c.endsWith(f))) {
+        // In a git repo AND actually changed
+        verified.push(f);
+      }
+      // In a git repo but NOT changed — skip (read-only inspection)
+    }
+    reviewedFiles = verified;
   }
 
   // No readable files remain — a bash summary alone (e.g. "rm foo.ts") is not reviewable content

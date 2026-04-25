@@ -85,22 +85,41 @@ describe("parseSettings", () => {
     expect(errors[0]).toContain("thinkingLevel");
   });
 
-  it("parseSettings_RoundupEnabledTrue_Applies", () => {
-    const { settings, errors } = parseSettings({ roundupEnabled: true });
-    expect(settings.roundupEnabled).toBe(true);
+  it("parseSettings_ArchitectEnabledTrue_Applies", () => {
+    const { settings, errors } = parseSettings({ architectEnabled: true });
+    expect(settings.architectEnabled).toBe(true);
     expect(errors).toEqual([]);
   });
 
-  it("parseSettings_RoundupEnabledFalse_Applies", () => {
-    const { settings, errors } = parseSettings({ roundupEnabled: false });
-    expect(settings.roundupEnabled).toBe(false);
+  it("parseSettings_ArchitectEnabledFalse_Applies", () => {
+    const { settings, errors } = parseSettings({ architectEnabled: false });
+    expect(settings.architectEnabled).toBe(false);
     expect(errors).toEqual([]);
   });
 
-  it("parseSettings_NonBooleanRoundupEnabled_RejectsWithError", () => {
-    const { settings, errors } = parseSettings({ roundupEnabled: "yes" });
-    expect(settings.roundupEnabled).toBe(DEFAULT_SETTINGS.roundupEnabled);
+  it("parseSettings_NonBooleanArchitectEnabled_RejectsWithError", () => {
+    const { settings, errors } = parseSettings({ architectEnabled: "yes" });
+    expect(settings.architectEnabled).toBe(DEFAULT_SETTINGS.architectEnabled);
     expect(errors.length).toBe(1);
+  });
+
+  it("parseSettings_LegacyRoundupEnabled_AppliesAsArchitectEnabled", () => {
+    const { settings, errors } = parseSettings({ roundupEnabled: false });
+    expect(settings.architectEnabled).toBe(false);
+    expect(errors).toEqual([]);
+  });
+
+  it("parseSettings_ArchitectEnabledOverridesLegacyRoundup", () => {
+    // When both are present, architectEnabled wins (roundupEnabled is only used as fallback)
+    const { settings, errors } = parseSettings({ architectEnabled: true, roundupEnabled: false });
+    expect(settings.architectEnabled).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  it("parseSettings_LegacyRoundupEnabled_NotFlaggedAsUnknown", () => {
+    const { errors } = parseSettings({ roundupEnabled: true });
+    // Should NOT warn about unknown key
+    expect(errors.some((e) => e.includes("Unknown"))).toBe(false);
   });
 
   it("parseSettings_UnknownKey_WarnsButDoesNotFail", () => {
@@ -121,14 +140,14 @@ describe("parseSettings", () => {
       maxReviewLoops: 10,
       model: "openai/gpt-5",
       thinkingLevel: "high",
-      roundupEnabled: true,
+      architectEnabled: true,
     };
     const { settings, errors } = parseSettings(input);
     expect(errors).toEqual([]);
     expect(settings.maxReviewLoops).toBe(10);
     expect(settings.model).toBe("openai/gpt-5");
     expect(settings.thinkingLevel).toBe("high");
-    expect(settings.roundupEnabled).toBe(true);
+    expect(settings.architectEnabled).toBe(true);
   });
 
   it("parseSettings_MixOfValidAndInvalid_AppliesValidRejectsInvalid", () => {

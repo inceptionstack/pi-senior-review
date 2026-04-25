@@ -48,11 +48,10 @@ import {
 import { getBestReviewContent, FALLBACK_LIMITS, LARGE_LIMITS, buildPerFileContext } from "./context";
 import { loadIgnorePatterns, filterIgnored } from "./ignore";
 import {
-  loadRoundupRules,
-  runRoundupReview,
-  checkRoundupHeuristics,
-  runRoundupJudge,
-} from "./roundup";
+  loadArchitectRules,
+  runArchitectReview,
+  shouldRunArchitectReview,
+} from "./architect";
 import { findGitRoot, resolveAllGitRoots } from "./git-roots";
 import { log, logRotate } from "./logger";
 import { startReviewDisplay, inferArchModules, buildArchDiagram, type ReviewDisplayHandle } from "./review-display";
@@ -60,7 +59,7 @@ import {
   SCAFFOLD_SETTINGS,
   SCAFFOLD_REVIEW_RULES,
   SCAFFOLD_AUTO_REVIEW,
-  SCAFFOLD_ROUNDUP_RULES,
+  SCAFFOLD_ARCHITECT_RULES,
   SCAFFOLD_IGNORE,
 } from "./scaffold";
 
@@ -79,10 +78,10 @@ export default function (pi: ExtensionAPI) {
   let lastReviewedContentHash = "";
   let reviewLoopCount = 0;
   let peakReviewLoopCount = 0; // highest loop count before LGTM (tracks if fixes happened)
-  let roundupDone = false;
-  let roundupRules: string | null = null;
+  let architectDone = false;
+  let architectRules: string | null = null;
   let sessionChangeSummaries: string[] = []; // accumulates change summaries across loops
-  let sessionChangedFiles = new Set<string>(); // accumulates files across review loops for roundup
+  let sessionChangedFiles = new Set<string>(); // accumulates files across review loops for architect review
 
   let settings: AutoReviewSettings = { ...DEFAULT_SETTINGS };
   let customRules: string | null = null;
@@ -148,7 +147,7 @@ export default function (pi: ExtensionAPI) {
       toolCounts: new Map(),
       lastToolDesc: new Map(),
       totalToolCalls: 0,
-      isRoundup: false,
+      isArchitect: false,
       archDiagram: null,
       archActiveModule: null,
     });
@@ -300,7 +299,7 @@ export default function (pi: ExtensionAPI) {
         reviewLoopCount = 0;
         peakReviewLoopCount = 0;
         lastReviewedContentHash = "";
-        roundupDone = false;
+        architectDone = false;
         sessionChangeSummaries = [];
         sessionChangedFiles = new Set();
         if (ctx.hasUI) ctx.ui.notify(`Senior review: on`, "info");
@@ -593,7 +592,7 @@ export default function (pi: ExtensionAPI) {
         );
       }
 
-      // Track change summary and files for roundup
+      // Track change summary and files for architect review
       sessionChangeSummaries.push(best.content.slice(0, 5000));
       for (const f of best.files) sessionChangedFiles.add(f);
 
@@ -606,78 +605,48 @@ export default function (pi: ExtensionAPI) {
         reviewLoopCount = 0;
         sendReviewResult(pi, result, "", { reviewedFiles: best.files });
 
-        // Gated roundup: heuristics → judge → full roundup
-        if (settings.roundupEnabled && !roundupDone) {
-          const heuristic = checkRoundupHeuristics({
-            changedFiles: [...sessionChangedFiles],
-            peakLoopCount: peakReviewLoopCount,
-            changeSummaries: sessionChangeSummaries,
-          });
+        // Architect review: always trigger when >1 file reviewed from git repo(s)
+        if (settings.architectEnabled && !architectDone && shouldRunArchitectReview(best.files, best.isGitBased)) {
+          architectDone = true;
+          log(`architect: running — ${best.files.length} files reviewed`);
+          updateStatus(ctx, "architect review…");
 
-          if (heuristic === "maybe") {
-            roundupDone = true;
-            updateStatus(ctx, "roundup judge…");
-            if (reviewDisplay) reviewDisplay.update({ activity: "roundup judge…" });
-            const judge = await runRoundupJudge({
+          // Switch widget to architect mode with inferred architecture diagram
+          if (reviewDisplay) {
+            const allFiles = [...sessionChangedFiles];
+            const modules = inferArchModules(allFiles);
+            const theme = { fg: ctx.ui.theme.fg as (c: string, t: string) => string, bold: ctx.ui.theme.bold };
+            const archDiagram = buildArchDiagram(modules, null, theme);
+            reviewDisplay.setArchitectMode(allFiles, archDiagram);
+          }
+
+          try {
+            const summaryText = sessionChangeSummaries.join("\n\n---\n\n");
+            await runArchitectReview({
+              pi,
               signal: reviewAbort!.signal,
               cwd: ctx.cwd,
               model: settings.model,
-              changedFiles: [...sessionChangedFiles],
-              peakLoopCount: peakReviewLoopCount,
-              changeSummaries: sessionChangeSummaries,
+              customRules: architectRules,
+              sessionChangeSummary: summaryText,
               onActivity: (desc) => {
-                updateStatus(ctx, `judge: ${desc}`);
-                if (reviewDisplay) reviewDisplay.update({ activity: `judge: ${desc}` });
+                updateStatus(ctx, `architect: ${desc}`);
+                if (reviewDisplay) reviewDisplay.update({ activity: `architect: ${desc}` });
+              },
+              onToolCall: (toolName, targetPath) => {
+                if (reviewDisplay) reviewDisplay.recordToolCall(toolName, targetPath);
               },
             });
-
-            if (judge.recommended) {
-              log(`roundup: running — ${judge.reason}`);
-              updateStatus(ctx, "roundup review…");
-
-              // Switch widget to roundup mode with inferred architecture diagram
-              if (reviewDisplay) {
-                const allFiles = [...sessionChangedFiles];
-                const modules = inferArchModules(allFiles);
-                // Wrap theme to match buildArchDiagram's string-based color API
-                const theme = { fg: ctx.ui.theme.fg as (c: string, t: string) => string, bold: ctx.ui.theme.bold };
-                const archDiagram = buildArchDiagram(modules, null, theme);
-                reviewDisplay.setRoundupMode(allFiles, archDiagram);
-              }
-
-              try {
-                const summaryText = sessionChangeSummaries.join("\n\n---\n\n");
-                await runRoundupReview({
-                  pi,
-                  signal: reviewAbort!.signal,
-                  cwd: ctx.cwd,
-                  model: settings.model,
-                  customRules: roundupRules,
-                  sessionChangeSummary: summaryText,
-                  onActivity: (desc) => {
-                    updateStatus(ctx, `roundup: ${desc}`);
-                    if (reviewDisplay) reviewDisplay.update({ activity: `roundup: ${desc}` });
-                  },
-                  onToolCall: (toolName, targetPath) => {
-                    if (reviewDisplay) reviewDisplay.recordToolCall(toolName, targetPath);
-                  },
-                });
-              } catch (err: any) {
-                if (err?.message === "Review cancelled") throw err;
-                log(`ERROR: Roundup review failed: ${err?.message ?? err}`);
-              } finally {
-                // Reset accumulated state so next roundup cycle starts fresh
-                sessionChangeSummaries = [];
-                sessionChangedFiles = new Set();
-                peakReviewLoopCount = 0;
-                roundupDone = false;
-              }
-            } else {
-              log(`roundup: skipped by judge — ${judge.reason}`);
-              roundupDone = false;
-            }
+          } catch (err: any) {
+            if (err?.message === "Review cancelled") throw err;
+            log(`ERROR: Architect review failed: ${err?.message ?? err}`);
+          } finally {
+            // Reset accumulated state so next architect cycle starts fresh
+            sessionChangeSummaries = [];
+            sessionChangedFiles = new Set();
+            peakReviewLoopCount = 0;
+            architectDone = false;
           }
-          // heuristic === "skip": roundupDone stays false, will re-evaluate next LGTM
         }
       } else {
         peakReviewLoopCount = Math.max(peakReviewLoopCount, reviewLoopCount);
@@ -748,7 +717,7 @@ export default function (pi: ExtensionAPI) {
       reviewLoopCount = 0;
       peakReviewLoopCount = 0;
       lastReviewedContentHash = "";
-      roundupDone = false;
+      architectDone = false;
       lastReviewHadIssues = false;
       sessionChangeSummaries = [];
       sessionChangedFiles = new Set();
@@ -817,7 +786,7 @@ export default function (pi: ExtensionAPI) {
         "settings.json": SCAFFOLD_SETTINGS,
         "auto-review.md": SCAFFOLD_AUTO_REVIEW,
         "review-rules.md": SCAFFOLD_REVIEW_RULES,
-        "roundup.md": SCAFFOLD_ROUNDUP_RULES,
+        "architect.md": SCAFFOLD_ARCHITECT_RULES,
         ignore: SCAFFOLD_IGNORE,
       };
 
@@ -1277,7 +1246,7 @@ export default function (pi: ExtensionAPI) {
     reviewLoopCount = 0;
     peakReviewLoopCount = 0;
     lastReviewedContentHash = "";
-    roundupDone = false;
+    architectDone = false;
     sessionChangeSummaries = [];
     sessionChangedFiles = new Set();
 
@@ -1286,18 +1255,18 @@ export default function (pi: ExtensionAPI) {
       loadAutoReviewRules(ctx.cwd),
       loadSettings(ctx.cwd),
       loadIgnorePatterns(ctx.cwd),
-      loadRoundupRules(ctx.cwd),
+      loadArchitectRules(ctx.cwd),
     ]);
 
     customRules = rules;
     autoReviewRules = autoRules;
     ignorePatterns = patterns;
-    roundupRules = rRules;
+    architectRules = rRules;
     settings = settingsResult.settings;
 
     if (autoReviewRules) log("Loaded auto-review rules from .senior-review/auto-review.md");
     if (customRules) log("Loaded custom rules from .senior-review/review-rules.md");
-    if (roundupRules) log("Loaded roundup rules from .senior-review/roundup.md");
+    if (architectRules) log("Loaded architect rules from .senior-review/architect.md");
     if (ignorePatterns)
       log(`Loaded ${ignorePatterns.length} ignore pattern(s) from .senior-review/ignore`);
     for (const err of settingsResult.errors) {

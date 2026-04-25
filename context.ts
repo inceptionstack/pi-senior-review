@@ -162,6 +162,8 @@ export interface ReviewContent {
   content: string;
   label: string;
   files: string[];
+  /** True when the content was gathered from a git repository (diff, commit log, etc.) */
+  isGitBased: boolean;
 }
 
 // ── Helper: format tool call summary section ────────
@@ -210,6 +212,7 @@ export async function getContentFromGitRoots(
     content: allContexts.join("\n\n---\n\n") + summarySection,
     label: `${allContexts.length} repo(s)`,
     files: allFiles,
+    isGitBased: true,
   };
 }
 
@@ -416,6 +419,7 @@ export async function getContentFromCwd(
     content: formatReviewContext(reviewContext, lim) + summarySection,
     label: "",
     files: reviewContext.changedFiles,
+    isGitBased: true,
   };
 }
 
@@ -471,6 +475,7 @@ export async function getContentFromLastCommit(
       content: `## Recent commits\n\`\`\`\n${commitLog}\n\`\`\`\n\n## Files to review\n\nRead each file with read(path) to see its full contents.\n\n${fileSection}\n\n## Diff\n\`\`\`diff\n${truncated}\n\`\`\`${summarySection}`,
       label: "last commit",
       files,
+      isGitBased: true,
     };
   } catch {
     return null;
@@ -521,7 +526,7 @@ export async function getContentFromToolCalls(
     .filter(Boolean)
     .join("\n\n---\n\n");
 
-  return { content, label: "tracked changes", files: reviewedFiles };
+  return { content, label: "tracked changes", files: reviewedFiles, isGitBased: false };
 }
 
 // ── Main entry: try each path in order ───────────────

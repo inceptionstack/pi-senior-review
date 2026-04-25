@@ -43,7 +43,7 @@ function buildArtFrames(label: string): string[][] {
 }
 
 const SENIOR_FRAMES = buildArtFrames("SENIOR");
-const ROUNDUP_FRAMES = buildArtFrames("ROUNDUP");
+const ARCHITECT_FRAMES = buildArtFrames("ARCHITCT");
 
 const SPINNER_FRAMES = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"];
 
@@ -63,9 +63,9 @@ export interface ReviewDisplayState {
   lastToolDesc: Map<string, string>;
   /** Total tool calls across all files */
   totalToolCalls: number;
-  /** Whether this is a roundup review */
-  isRoundup: boolean;
-  /** Architecture diagram lines (for roundup) */
+  /** Whether this is an architect review */
+  isArchitect: boolean;
+  /** Architecture diagram lines (for architect review) */
   archDiagram: string[] | null;
   /** Currently highlighted module in the architecture diagram */
   archActiveModule: string | null;
@@ -75,8 +75,8 @@ export interface ReviewDisplayHandle {
   update(patch: Partial<ReviewDisplayState>): void;
   /** Record a tool call, associating it with the best-matching file. */
   recordToolCall(toolName: string, targetPath: string | null): void;
-  /** Switch to roundup mode with different ASCII art and the full session file list. */
-  setRoundupMode(sessionFiles: string[], archDiagram?: string[]): void;
+  /** Switch to architect mode with different ASCII art and the full session file list. */
+  setArchitectMode(sessionFiles: string[], archDiagram?: string[]): void;
   stop(): void;
 }
 
@@ -230,7 +230,7 @@ export function buildReviewWidget(
   },
 ): string[] {
   const lines: string[] = [];
-  const artFrames = state.isRoundup ? ROUNDUP_FRAMES : SENIOR_FRAMES;
+  const artFrames = state.isArchitect ? ARCHITECT_FRAMES : SENIOR_FRAMES;
   const senior = artFrames[animFrame % artFrames.length];
   const spinner = SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length];
 
@@ -244,7 +244,7 @@ export function buildReviewWidget(
   const toolInfo = state.totalToolCalls > 0
     ? theme.fg("dim", ` tools: ${state.totalToolCalls}`)
     : "";
-  const reviewType = state.isRoundup ? "Roundup Review" : "Reviewing";
+  const reviewType = state.isArchitect ? "Architect Review" : "Reviewing";
 
   infoLines.push(
     theme.fg("accent", theme.bold(`${spinner} ${reviewType}…`)) +
@@ -255,8 +255,8 @@ export function buildReviewWidget(
   );
   infoLines.push("");
 
-  if (state.isRoundup && state.archDiagram && state.archDiagram.length > 0) {
-    // Show architecture diagram for roundup
+  if (state.isArchitect && state.archDiagram && state.archDiagram.length > 0) {
+    // Show architecture diagram for architect review
     for (const line of state.archDiagram) {
       infoLines.push(line);
     }
@@ -345,7 +345,7 @@ export function startReviewDisplay(
     spinnerFrame = (spinnerFrame + 1) % SPINNER_FRAMES.length;
     tickCount++;
     if (tickCount % 4 === 0) {
-      animFrame = (animFrame + 1) % (state.isRoundup ? ROUNDUP_FRAMES.length : SENIOR_FRAMES.length);
+      animFrame = (animFrame + 1) % (state.isArchitect ? ARCHITECT_FRAMES.length : SENIOR_FRAMES.length);
     }
     redraw();
   }, 150);
@@ -377,8 +377,8 @@ export function startReviewDisplay(
         state.activeFile = match;
       }
 
-      // For roundup, try to highlight the matching architecture module
-      if (state.isRoundup && state.archDiagram && targetPath) {
+      // For architect review, try to highlight the matching architecture module
+      if (state.isArchitect && state.archDiagram && targetPath) {
         const mod = inferModuleFromPath(targetPath);
         if (mod && mod !== state.archActiveModule) {
           state.archActiveModule = mod;
@@ -402,12 +402,12 @@ export function startReviewDisplay(
 
       redraw();
     },
-    setRoundupMode(sessionFiles: string[], archDiagram?: string[]) {
-      state.isRoundup = true;
+    setArchitectMode(sessionFiles: string[], archDiagram?: string[]) {
+      state.isArchitect = true;
       state.files = sessionFiles;
       state.archDiagram = archDiagram ?? null;
       state.archActiveModule = null;
-      // Reset tool counts for the roundup phase
+      // Reset tool counts for the architect phase
       state.toolCounts = new Map();
       state.lastToolDesc = new Map();
       state.totalToolCalls = 0;

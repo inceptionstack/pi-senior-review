@@ -42,9 +42,9 @@ try {
 }
 export const SCAFFOLD_REVIEW_RULES: string = _scaffoldReviewRules;
 
-// ── roundup.md ───────────────────────────────────────
+// ── architect.md ─────────────────────────────────────
 
-export const SCAFFOLD_ROUNDUP_RULES = `## Architecture
+export const SCAFFOLD_ARCHITECT_RULES = `## Architecture
 
 - Verify the module dependency graph has no unexpected cycles
 - Check that layering is respected (e.g. UI → Service → Repository → Database)
@@ -107,7 +107,7 @@ export const SCAFFOLD_SETTINGS = JSON.stringify(
     maxReviewLoops: 100,
     model: "amazon-bedrock/us.anthropic.claude-opus-4-6-v1",
     thinkingLevel: "off",
-    roundupEnabled: true,
+    architectEnabled: true,
     reviewTimeoutMs: 120000,
     toggleShortcut: "alt+r",
     cancelShortcut: "",

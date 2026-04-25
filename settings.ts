@@ -61,7 +61,7 @@ export interface AutoReviewSettings {
   maxReviewLoops: number;
   model: string; // "provider/model-id" e.g. "amazon-bedrock/us.anthropic.claude-opus-4-6-v1"
   thinkingLevel: string; // "off" | "minimal" | "low" | "medium" | "high" | "xhigh"
-  roundupEnabled: boolean;
+  architectEnabled: boolean;
   reviewTimeoutMs: number; // Max wall-clock for a single review (default 120s)
   toggleShortcut: string; // Key id for toggling review on/off (default "alt+r")
   cancelShortcut: string; // Key id for cancelling in-progress review (default: none — use /cancel-review)
@@ -80,7 +80,7 @@ export const DEFAULT_SETTINGS: AutoReviewSettings = {
   maxReviewLoops: 100,
   model: "amazon-bedrock/us.anthropic.claude-opus-4-6-v1",
   thinkingLevel: "off",
-  roundupEnabled: true, // gated by heuristics + LLM judge when true
+  architectEnabled: true, // triggers when >1 file reviewed
   reviewTimeoutMs: 120_000,
   toggleShortcut: DEFAULT_TOGGLE_SHORTCUT,
   cancelShortcut: DEFAULT_CANCEL_SHORTCUT,
@@ -138,12 +138,23 @@ export function parseSettings(parsed: Record<string, unknown>): {
     }
   }
 
-  if ("roundupEnabled" in parsed) {
-    if (typeof parsed.roundupEnabled === "boolean") {
-      settings.roundupEnabled = parsed.roundupEnabled;
+  if ("architectEnabled" in parsed) {
+    if (typeof parsed.architectEnabled === "boolean") {
+      settings.architectEnabled = parsed.architectEnabled;
     } else {
       errors.push(
-        `[senior-review] "roundupEnabled" must be a boolean (got ${JSON.stringify(parsed.roundupEnabled)}). Using default: ${DEFAULT_SETTINGS.roundupEnabled}.`,
+        `[senior-review] "architectEnabled" must be a boolean (got ${JSON.stringify(parsed.architectEnabled)}). Using default: ${DEFAULT_SETTINGS.architectEnabled}.`,
+      );
+    }
+  }
+
+  // Backwards compat: accept old "roundupEnabled" if "architectEnabled" not set
+  if (!("architectEnabled" in parsed) && "roundupEnabled" in parsed) {
+    if (typeof parsed.roundupEnabled === "boolean") {
+      settings.architectEnabled = parsed.roundupEnabled;
+    } else {
+      errors.push(
+        `[senior-review] "roundupEnabled" must be a boolean (got ${JSON.stringify(parsed.roundupEnabled)}). Using default: ${DEFAULT_SETTINGS.architectEnabled}.`,
       );
     }
   }
@@ -184,6 +195,8 @@ export function parseSettings(parsed: Record<string, unknown>): {
   }
 
   const knownKeys = new Set(Object.keys(DEFAULT_SETTINGS));
+  // Accept legacy "roundupEnabled" without warning
+  knownKeys.add("roundupEnabled");
   for (const key of Object.keys(parsed)) {
     if (!knownKeys.has(key)) {
       errors.push(

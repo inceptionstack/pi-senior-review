@@ -280,19 +280,29 @@ export default function (pi: ExtensionAPI) {
           if (reviewDisplay) reviewDisplay.recordToolCall(toolName, targetPath);
         },
         onContentReady: (files) => {
-          updateStatus(ctx);
-          reviewCallbacks = startReviewWidget(ctx, files);
+          try {
+            updateStatus(ctx);
+            reviewCallbacks = startReviewWidget(ctx, files);
+          } catch (err: any) {
+            log(`WARNING: onContentReady callback failed: ${err?.message ?? err}`);
+          }
         },
         onArchitectStart: (files) => {
-          updateStatus(ctx);
-          if (!reviewDisplay) return;
-          const modules = inferArchModules(files);
-          const theme = {
-            fg: ctx.ui.theme.fg as (c: string, t: string) => string,
-            bold: ctx.ui.theme.bold,
-          };
-          const archDiagram = buildArchDiagram(modules, null, theme);
-          reviewDisplay.setArchitectMode(files, archDiagram);
+          try {
+            updateStatus(ctx);
+            if (!reviewDisplay) return;
+            const modules = inferArchModules(files);
+            const theme = {
+              fg: ctx.ui?.theme?.fg as (c: string, t: string) => string,
+              bold: ctx.ui?.theme?.bold,
+            };
+            if (!theme.fg || !theme.bold) return;
+            const archDiagram = buildArchDiagram(modules, null, theme);
+            reviewDisplay.setArchitectMode(files, archDiagram);
+          } catch (err: any) {
+            log(`WARNING: onArchitectStart callback failed: ${err?.message ?? err}`);
+            log(`WARNING stack: ${err?.stack ?? "(no stack)"}`);
+          }
         },
       });
 
@@ -307,13 +317,15 @@ export default function (pi: ExtensionAPI) {
       if (outcome.type === "error") {
         const errMsg = outcome.error.message;
         log(`ERROR: Review failed: ${errMsg}`);
+        log(`ERROR stack: ${outcome.error.stack ?? "(no stack)"}`);
         if (ctx.hasUI) ctx.ui.notify(`Senior review error: ${errMsg.slice(0, 200)}`, "error");
       }
 
       renderOutcome(outcome);
     } catch (err: any) {
       const errMsg = err?.message ?? String(err);
-      log(`ERROR: Review failed: ${errMsg}`);
+      log(`ERROR: Review failed (outer): ${errMsg}`);
+      log(`ERROR stack (outer): ${err?.stack ?? "(no stack)"}`);
       if (ctx.hasUI) ctx.ui.notify(`Senior review error: ${errMsg.slice(0, 200)}`, "error");
       renderOutcome({ type: "error", error: err instanceof Error ? err : new Error(errMsg) });
     } finally {

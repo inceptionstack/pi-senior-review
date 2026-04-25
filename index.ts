@@ -596,14 +596,22 @@ export default function (pi: ExtensionAPI) {
       if (result.isLgtm) {
         lastReviewHadIssues = false;
         reviewLoopCount = 0;
-        sendReviewResult(pi, result, "", { reviewedFiles: best.files });
 
-        // Architect review: trigger when >1 file reviewed across the session from git repo(s)
-        if (
+        // Check if architect review will follow BEFORE sending the LGTM.
+        // If yes, send LGTM with triggerTurn: false to avoid invalidating ctx
+        // (sendMessage with triggerTurn: true starts a new agent turn which
+        // replaces the session and makes the current ctx stale).
+        const willRunArchitect =
           settings.architectEnabled &&
           !architectDone &&
-          shouldRunArchitectReview([...sessionChangedFiles], sessionHasGitContent)
-        ) {
+          shouldRunArchitectReview([...sessionChangedFiles], sessionHasGitContent);
+
+        sendReviewResult(pi, result, "", {
+          reviewedFiles: best.files,
+          triggerTurn: !willRunArchitect,
+        });
+
+        if (willRunArchitect) {
           architectDone = true;
           log(`architect: running — ${sessionChangedFiles.size} files reviewed across session`);
           updateStatus(ctx);

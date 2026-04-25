@@ -355,6 +355,8 @@ export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhi
 | `HARDNO_OUTPUT`               | `ndjson` or `json`            |
 | `HARDNO_NO_PROGRESS`          | suppress progress when `true` |
 
+`ContextSettings` fields (`maxFileSize`, `maxTotalContentSize`, `maxDiffSize`, and their fallback counterparts) intentionally have NO env var overrides — they're deep-tuning parameters most users will never touch, and adding six more `HARDNO_CONTEXT_*` env vars would bloat the surface area without a clear use case. Override via config file only. Adding env vars later is non-breaking.
+
 Private subprocess env:
 
 | Env var                     | Purpose                                                          |

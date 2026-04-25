@@ -9,8 +9,7 @@
  * accumulated tech debt, and documentation accuracy.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { runReviewSession } from "./reviewer";
+import { runReviewSession, type ReviewResult } from "./reviewer";
 import { readConfigFile } from "./settings";
 import { log } from "./logger";
 
@@ -95,7 +94,6 @@ export function shouldRunArchitectReview(reviewedFiles: string[], isGitBased: bo
 // ── Full architect review ──────────────────────────
 
 export interface ArchitectReviewOptions {
-  pi: ExtensionAPI;
   signal: AbortSignal;
   cwd: string;
   model?: string;
@@ -107,38 +105,15 @@ export interface ArchitectReviewOptions {
 
 /**
  * Run the final architect review.
- * Returns true if it triggered a turn (issues found), false if LGTM.
  */
-export async function runArchitectReview(opts: ArchitectReviewOptions): Promise<boolean> {
+export async function runArchitectReview(opts: ArchitectReviewOptions): Promise<ReviewResult> {
   const prompt = `${buildArchitectPrompt(opts.customRules)}\n\n---\n\nHere is a summary of all changes made in this session:\n\n${opts.sessionChangeSummary}\n\nPlease explore the codebase with your tools to verify everything fits together.`;
 
-  const result = await runReviewSession(prompt, {
+  return await runReviewSession(prompt, {
     signal: opts.signal,
     cwd: opts.cwd,
     model: opts.model,
     onActivity: opts.onActivity,
     onToolCall: opts.onToolCall,
   });
-
-  if (result.isLgtm) {
-    opts.pi.sendMessage(
-      {
-        customType: "code-review",
-        content: `🏗️ **Architect Review**\n\nFinal architecture review found no issues. Everything fits together.\n\nIf you were waiting to push until after reviews were done — all reviews are done, no issues found. Safe to push.`,
-        display: true,
-      },
-      { triggerTurn: true, deliverAs: "followUp" },
-    );
-    return false;
-  } else {
-    opts.pi.sendMessage(
-      {
-        customType: "code-review",
-        content: `🏗️ **Architect Review**\n\nFinal architecture review found potential issues:\n\n${result.text}\n\nPlease review these findings. These are big-picture concerns that individual reviews may have missed.\n\n⚠️ **Do NOT push to remote yet.** Fix any issues first.`,
-        display: true,
-      },
-      { triggerTurn: true, deliverAs: "followUp" },
-    );
-    return true;
-  }
 }

@@ -97,26 +97,31 @@ index.ts (orchestrator)
 ## Important patterns
 
 ### Config resolution (two locations, local wins)
+
 1. `cwd/.senior-review/` — project-local config
 2. `~/.pi/.senior-review/` — global defaults
-All config files are optional. `settings.ts` handles loading + validation with error messages for invalid values.
+   All config files are optional. `settings.ts` handles loading + validation with error messages for invalid values.
 
 ### Content gathering has 4 fallback paths (context.ts)
+
 1. **Git roots** — diffs from detected git repos (best quality)
 2. **CWD git repo** — `buildReviewContext` from current directory
 3. **Last commit** — `git diff HEAD~1 HEAD` as fallback
 4. **Tool calls only** — read files directly from agent tool call paths (no git)
 
 ### The review prompt has 3 non-negotiable parts (prompt.ts)
+
 1. **PROMPT_PREFIX** — tools, budget, workflow (always included)
 2. **Auto-review rules** — what to review / skip (user-overridable via `auto-review.md`)
 3. **PROMPT_SUFFIX** — response format, verdict tags (always included)
-`review-rules.md` appends additional project-specific rules after part 3.
+   `review-rules.md` appends additional project-specific rules after part 3.
 
 ### Verdict parsing (reviewer.ts)
+
 The reviewer must output `<verdict>LGTM</verdict>` or `<verdict>ISSUES_FOUND</verdict>`. If missing, up to 2 retry prompts ask for just the verdict. After retries, defaults to ISSUES_FOUND (safer).
 
 ### Architect review (architect.ts)
+
 Triggers automatically when >1 file was reviewed across the session AND content was git-based. No heuristics or judge gating — it always runs for multi-file changes. Checks architecture coherence, cross-file consistency, and accumulated tech debt.
 
 ## Testing conventions
@@ -130,6 +135,7 @@ Triggers automatically when >1 file was reviewed across the session AND content 
 ## Common modification scenarios
 
 ### Adding a new setting
+
 1. Add to `AutoReviewSettings` interface in `settings.ts`
 2. Add default in `DEFAULT_SETTINGS`
 3. Add validation in `parseSettings()`
@@ -139,15 +145,18 @@ Triggers automatically when >1 file was reviewed across the session AND content 
 7. Update README.md
 
 ### Adding a new slash command
+
 1. Add `pi.registerCommand(...)` in `index.ts`
 2. Update the commands table in README.md
 
 ### Changing review prompt behavior
+
 1. Modify `prompt.ts` (PROMPT_PREFIX, DEFAULT_AUTO_REVIEW_RULES, or PROMPT_SUFFIX)
 2. Or modify `default-review-rules.md` for the scaffolded review criteria
 3. Update tests in `test/prompt.test.ts`
 
 ### Adding a new content fallback path
+
 1. Add a new function in `context.ts` (e.g., `getContentFromX`)
 2. Wire it into `getBestReviewContent()` in the correct priority order
 3. Add tests
@@ -155,6 +164,7 @@ Triggers automatically when >1 file was reviewed across the session AND content 
 ## Files to read first
 
 If you're new to this codebase, read in this order:
+
 1. **README.md** — user-facing docs, feature overview
 2. **index.ts** — the orchestrator, shows how everything connects
 3. **reviewer.ts** — the core: spawning a review session, parsing results

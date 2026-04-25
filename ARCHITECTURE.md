@@ -47,25 +47,25 @@ All arrows mean "imports from". No circular dependencies exist.
            (node:fs)          |
                               ▼
                           (pi SDK)
-                     
+
         context.ts ──────► helpers.ts
-            │                  
+            │
             ├──────────► ignore.ts ──► settings.ts (readConfigFile)
-            │                  
+            │
             ├──────────► changes.ts
-            │                  
+            │
             └──────────► logger.ts
 
         architect.ts ──► reviewer.ts
-            │                  
+            │
             └──────────► settings.ts (readConfigFile)
 
         git-roots.ts ──► (pi SDK)
 
         changes.ts ──── (standalone, no local imports)
-        
+
         helpers.ts ──── (standalone, no local imports)
-        
+
         logger.ts ───── (standalone, only node:fs + node:path + node:os)
 ```
 
@@ -249,6 +249,7 @@ Settings validation is in `parseSettings()` — a pure function that returns `{ 
 ## Ignore system (ignore.ts)
 
 Follows gitignore semantics:
+
 - `*` matches anything except `/`
 - `**` matches everything including `/`
 - `!` prefix negates a pattern
@@ -257,6 +258,7 @@ Follows gitignore semantics:
 - Patterns with `/` match full path
 
 Applied at two points:
+
 1. When gathering review content (filters files from git diffs)
 2. When running `/review N` or `/review-all` commands
 
@@ -280,6 +282,7 @@ During reviews, an animated widget renders below the editor:
 ```
 
 The widget tracks:
+
 - Which file is currently being reviewed (via tool call path matching)
 - Tool call counts per file
 - Elapsed time, model name, loop count
@@ -291,9 +294,9 @@ In architect mode, the ASCII art changes to "ARCHITCT" and an architecture diagr
 
 Two output channels under `~/.pi/.senior-review/`:
 
-| Output | Format | Purpose |
-|--------|--------|---------|
-| `review.log` | Timestamped text lines | Free-text debug log (rotates at 1MB) |
+| Output           | Format                     | Purpose                                                                              |
+| ---------------- | -------------------------- | ------------------------------------------------------------------------------------ |
+| `review.log`     | Timestamped text lines     | Free-text debug log (rotates at 1MB)                                                 |
 | `reviews/*.json` | Structured JSON per review | Full review records (prompt length, raw/cleaned text, tool calls, verdict, duration) |
 
 All logging is synchronous (`appendFileSync` / `writeFileSync`) to guarantee output in complex async flows.
@@ -316,6 +319,7 @@ sendPrompt() listens on signal.addEventListener("abort")
 ```
 
 Cancellation sources:
+
 - `/cancel-review` slash command (recommended, works everywhere)
 - Configured `cancelShortcut` in settings (opt-in)
 - `ctrl+alt+r` (fallback, terminal-dependent)

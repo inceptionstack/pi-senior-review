@@ -36,7 +36,8 @@ import {
 } from "./settings";
 import { buildReviewPrompt } from "./prompt";
 import { clampCommitCount, shouldDiffAllCommits, truncateDiff } from "./helpers";
-import { runReviewSession, sendReviewResult } from "./reviewer";
+import { runReviewSession } from "./reviewer";
+import { sendReviewResult } from "./message-sender";
 import {
   type TrackedToolCall,
   hasFileChanges,
@@ -630,8 +631,7 @@ export default function (pi: ExtensionAPI) {
 
           try {
             const summaryText = sessionChangeSummaries.join("\n\n---\n\n");
-            await runArchitectReview({
-              pi,
+            const architectResult = await runArchitectReview({
               signal: reviewAbort!.signal,
               cwd: ctx.cwd,
               model: settings.model,
@@ -644,6 +644,26 @@ export default function (pi: ExtensionAPI) {
                 if (reviewDisplay) reviewDisplay.recordToolCall(toolName, targetPath);
               },
             });
+
+            if (architectResult.isLgtm) {
+              pi.sendMessage(
+                {
+                  customType: "code-review",
+                  content: `🏗️ **Architect Review**\n\nFinal architecture review found no issues. Everything fits together.\n\nIf you were waiting to push until after reviews were done — all reviews are done, no issues found. Safe to push.`,
+                  display: true,
+                },
+                { triggerTurn: true, deliverAs: "followUp" },
+              );
+            } else {
+              pi.sendMessage(
+                {
+                  customType: "code-review",
+                  content: `🏗️ **Architect Review**\n\nFinal architecture review found potential issues:\n\n${architectResult.text}\n\nPlease review these findings. These are big-picture concerns that individual reviews may have missed.\n\n⚠️ **Do NOT push to remote yet.** Fix any issues first.`,
+                  display: true,
+                },
+                { triggerTurn: true, deliverAs: "followUp" },
+              );
+            }
           } catch (err: any) {
             if (err?.message === "Review cancelled") throw err;
             log(`ERROR: Architect review failed: ${err?.message ?? err}`);

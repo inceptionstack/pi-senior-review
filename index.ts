@@ -456,6 +456,13 @@ export default function (pi: ExtensionAPI) {
     // Don't interfere if a toggle-review is in progress (confirm dialog open)
     if (isToggling) return;
 
+    // Reentrancy guard: if a review is already running (e.g. still winding down
+    // after cancel), don't start another one.
+    if (orchestrator.isReviewing) {
+      log("agent_end: skipping — review still in progress");
+      return;
+    }
+
     // Don't review if the agent was aborted (Esc pressed)
     const messages = (event as any).messages ?? [];
     const lastAssistant = [...messages].reverse().find((m: any) => m.role === "assistant");

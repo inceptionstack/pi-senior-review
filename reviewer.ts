@@ -284,8 +284,12 @@ export async function runReviewSession(prompt: string, opts: ReviewOptions): Pro
         if (settled) return;
         settled = true;
         if (timeoutId) clearTimeout(timeoutId);
-        session.abort();
-        reject(new Error("Review cancelled"));
+        // Await session.abort() so the reviewer agent actually stops
+        // before we reject. dispose() alone only disconnects listeners.
+        session.abort().then(
+          () => reject(new Error("Review cancelled")),
+          () => reject(new Error("Review cancelled")),
+        );
       };
 
       if (opts.signal.aborted) {
@@ -299,8 +303,10 @@ export async function runReviewSession(prompt: string, opts: ReviewOptions): Pro
         if (settled) return;
         log(`reviewer: timed out after ${timeoutMs / 1000}s`);
         settled = true;
-        session.abort();
-        reject(new Error("Review timed out"));
+        session.abort().then(
+          () => reject(new Error("Review timed out")),
+          () => reject(new Error("Review timed out")),
+        );
       }, timeoutMs);
 
       session.prompt(text).then(

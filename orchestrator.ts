@@ -187,6 +187,13 @@ export class ReviewOrchestrator {
         result = await this.runSeniorReview(input, best);
       }
 
+      // Check for late cancellation: if abort fired while runSeniorReview was
+      // settling, discard the result instead of feeding it back to the agent.
+      if (this.reviewAbort?.signal.aborted) {
+        log("Review cancelled after senior review completed (race window)");
+        return { type: "cancelled" };
+      }
+
       this.sessionChangeSummaries.push(best.content.slice(0, 5000));
       for (const f of best.files) this.sessionChangedFiles.add(f);
       if (best.isGitBased) this.sessionHasGitContent = true;

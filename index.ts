@@ -341,13 +341,13 @@ export default function (pi: ExtensionAPI) {
         if (ctx.hasUI) ctx.ui.notify(`Senior review error: ${errMsg.slice(0, 200)}`, "error");
       }
 
-      renderOutcome(outcome);
+      renderOutcome(outcome, ctx);
     } catch (err: any) {
       const errMsg = err?.message ?? String(err);
       log(`ERROR: Review failed (outer): ${errMsg}`);
       log(`ERROR stack (outer): ${err?.stack ?? "(no stack)"}`);
       if (ctx.hasUI) ctx.ui.notify(`Senior review error: ${errMsg.slice(0, 200)}`, "error");
-      renderOutcome({ type: "error", error: err instanceof Error ? err : new Error(errMsg) });
+      renderOutcome({ type: "error", error: err instanceof Error ? err : new Error(errMsg) }, ctx);
     } finally {
       finishReview(ctx);
     }
@@ -416,10 +416,32 @@ export default function (pi: ExtensionAPI) {
 
   // ── Auto-review on agent_end ───────────────────────
 
-  function renderOutcome(outcome: ReviewOutcome) {
+  function renderOutcome(outcome: ReviewOutcome, ctx: { ui: any; hasUI?: boolean }) {
     switch (outcome.type) {
-      case "skipped":
+      case "skipped": {
+        // Show a brief status hint for skip reasons that indicate "nothing to review"
+        const ui = safeGetUi(ctx);
+        if (ui && outcome.reason !== "disabled") {
+          const theme = ui.theme;
+          const label = theme.fg("accent", "senior-review");
+          const reason =
+            outcome.reason === "no_file_changes" || outcome.reason === "no_real_files"
+              ? "no file changes"
+              : outcome.reason === "no_meaningful_changes"
+                ? "no files to review"
+                : outcome.reason === "formatting_only"
+                  ? "formatting only"
+                  : outcome.reason === "duplicate_content"
+                    ? "no new changes"
+                    : null;
+          if (reason) {
+            ui.setStatus("code-review", `${label} ${theme.fg("dim", `skipped — ${reason}`)}`);
+            // Restore normal status after 3s
+            setTimeout(() => updateStatus(ctx), 3000);
+          }
+        }
         return;
+      }
       case "cancelled":
         return;
       case "max_loops":

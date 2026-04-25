@@ -13,7 +13,7 @@
 // Two frames for a subtle animation (alternating the eyes/glasses).
 
 function buildArtFrames(label: string): string[][] {
-  const padded = label.length > 7 ? label.slice(0, 7) : label.padStart(Math.floor((7 + label.length) / 2)).padEnd(7);
+  const padded = label.length > 8 ? label.slice(0, 8) : label.padStart(Math.floor((8 + label.length) / 2)).padEnd(8);
   return [
     [
       `    ┌─────────┐ `,

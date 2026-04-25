@@ -335,6 +335,14 @@ export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhi
 }
 ```
 
+**Architect inherits from `senior` when unset.** The `ArchitectSettings` interface marks `model`, `thinkingLevel`, and `timeoutMs` as optional. At runtime, resolution is:
+
+- `architect.model` → falls back to `senior.model`
+- `architect.thinkingLevel` → falls back to `senior.thinkingLevel`
+- `architect.timeoutMs` → falls back to `senior.timeoutMs` (and the orchestrator may still scale per-file on top of that, as today via `REVIEW_PER_FILE_BUDGET_MS` in `helpers.ts`)
+
+Inheritance is implemented in `settings.ts` during config load (materialize the effective architect settings), NOT in the orchestrator, so downstream code always sees fully-resolved values. This matches pi-lgtm's current behavior.
+
 ### Env overrides
 
 | Env var                       | Setting                       |
@@ -424,7 +432,7 @@ V1 hardno uses `@mariozechner/pi-coding-agent` auth storage internally. The user
 | `ignore.ts`                        | `hardno-cli/src/ignore.ts`                   | Move; update config comments.                                                                    |
 | `logger.ts`                        | `hardno-cli/src/logger.ts`                   | Move; default log dir becomes hardno state dir.                                                  |
 | `default-review-rules.md`          | `hardno-cli/default-review-rules.md`         | Move.                                                                                            |
-| `changes.ts`                       | `pi-lgtm/changes.ts`                         | Stays; pi-specific tool-call classification.                                                     |
+| `changes.ts`                       | **SPLIT**                                    | See §5.1 below. Most functions move to hardno; a minimal `changes.ts` stays in pi-lgtm.          |
 | `message-sender.ts`                | `pi-lgtm/message-sender.ts`                  | Stays; modify to accept hardno result shapes.                                                    |
 | `review-display.ts`                | `pi-lgtm/review-display.ts`                  | Stays; feed from NDJSON events.                                                                  |
 | `commands.ts`                      | `pi-lgtm/commands.ts`                        | Stays; shell out to hardno where applicable.                                                     |
@@ -452,6 +460,60 @@ V1 hardno uses `@mariozechner/pi-coding-agent` auth storage internally. The user
 | `hardno-cli/src/command-runner.ts` | new                                          | Node command runner.                                                                             |
 | `hardno-cli/src/harness-input.ts`  | new                                          | Validate optional harness metadata file.                                                         |
 | `pi-lgtm/hardno-subprocess.ts`     | new                                          | Spawn hardno, parse NDJSON, cancel child.                                                        |
+
+### 5.1 The `changes.ts` split
+
+`changes.ts` is imported by four modules (`index.ts`, `commands.ts`, `context.ts`, `orchestrator.ts`), two of which move to hardno and two of which stay. Blanket "Stays" doesn't work. The plan splits the file:
+
+**Move to `hardno-cli/src/changes.ts`** (used by orchestrator + context):
+
+- `TrackedToolCall` type
+- `hasFileChanges(toolCalls)`
+- `isFormattingOnlyTurn(toolCalls)`
+- `collectModifiedPaths(toolCalls)`
+- `extractPathsFromBashCommand(command)`
+- `isNonFileModifyingCommand(command)`
+- `isNonModifyingPart(part)` (internal helper of the above)
+- `isBinaryPath(path)`
+- `buildChangeSummary(toolCalls)`
+- `hasGitCommitCommand(toolCalls)`
+- Constants: `FILE_MODIFYING_TOOLS`, `GIT_READ_ONLY_SUBCOMMANDS`, `NON_MODIFYING_COMMAND_ROOTS`
+
+**Keep in `pi-lgtm/changes.ts`** (used by index + commands):
+
+- `isFileModifyingTool(toolName)` — pi-specific, checks tool names against pi's tool universe (`write`, `edit`, `bash`).
+- Re-export `TrackedToolCall`, `collectModifiedPaths`, `isBinaryPath` from `@inceptionstack/hardno-cli` so pi-lgtm's `index.ts` + `commands.ts` callsites keep working without churn:
+
+  ```ts
+  // pi-lgtm/changes.ts
+  export {
+    type TrackedToolCall,
+    collectModifiedPaths,
+    isBinaryPath,
+  } from "@inceptionstack/hardno-cli";
+  export function isFileModifyingTool(toolName: string): boolean {
+    return toolName === "write" || toolName === "edit" || toolName === "bash";
+  }
+  ```
+
+**Harness input file carries pre-computed signals.** Where the orchestrator used to call `hasFileChanges(toolCalls)` / `isFormattingOnlyTurn(toolCalls)` itself, pi-lgtm now does that work BEFORE spawning hardno and writes the booleans into the harness input file. Schema addition (also rename `HardnoHarnessEventFile` → `HardnoHarnessInputFile` for consistency with the `HARDNO_HARNESS_INPUT_FILE` env var):
+
+```ts
+interface HardnoHarnessInputFile {
+  // ... existing fields ...
+  /** Pre-computed by pi-lgtm from its tracked tool calls; hardno trusts this. */
+  precomputed?: {
+    hasFileChanges: boolean;
+    isFormattingOnlyTurn: boolean;
+  };
+}
+```
+
+When hardno is invoked standalone (no harness input file), it computes these itself by calling its own `changes.ts` functions on `toolCalls` (which is empty for standalone runs — so `hasFileChanges = false`, `isFormattingOnlyTurn = false`, and the orchestrator falls through to the git-diff content path). Net: no behavior regression in either invocation mode.
+
+**Public API from hardno** (see §6): `TrackedToolCall`, `collectModifiedPaths`, `isBinaryPath` are re-exported from `@inceptionstack/hardno-cli` so pi-lgtm can consume them without a deep import.
+
+**Testing:** `test/changes.test.ts` splits the same way — hardno gets all but the `isFileModifyingTool` tests, which stay in pi-lgtm.
 
 ## 6. Module boundary design
 
@@ -501,7 +563,7 @@ export interface ReviewBackendOptions {
   onToolCall?: (toolName: string, targetPath: string | null) => void;
   /** Optional: fires for status-level activity ("reading foo.ts", "thinking", etc.). */
   onActivity?: (description: string) => void;
-  /** Tools the backend is allowed to use during the review. Default: read-only set (`read`, `bash`, `grep`, `find`, `ls`). */
+  /** Tools the backend is allowed to use during the review. If undefined, the backend MUST default to its own read-only set. For `PiSdkBackend` that's `["read", "bash", "grep", "find", "ls"]` — enforced inside the backend's `run()` implementation, NOT the orchestrator. No backend may default to anything that lets the reviewer modify files (never include `write` or `edit`). */
   allowedTools?: string[];
 }
 

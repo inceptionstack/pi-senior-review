@@ -81,11 +81,11 @@ const MAIN_SESSION_WRITE_TOOLS = ["write", "edit"] as const;
  * Idempotent and cheap after the first call.
  */
 export function isSpawnedSubSession(pi: ExtensionAPI): boolean {
-  const cached = cache.get(pi as unknown as object);
+  const cached = cache.get(pi);
   if (cached !== undefined) return cached;
 
   const result = probeIsSpawned(pi);
-  cache.set(pi as unknown as object, result);
+  cache.set(pi, result);
   return result;
 }
 

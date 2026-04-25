@@ -569,6 +569,10 @@ export default function (pi: ExtensionAPI) {
       manualReviews?.cancel();
       orchestrator.reset();
       detectedGitRoots.clear(); // full reset clears session-level state too
+      if (skipStatusTimer) {
+        clearTimeout(skipStatusTimer);
+        skipStatusTimer = undefined;
+      }
       if (reviewDisplay) {
         reviewDisplay.stop();
         reviewDisplay = null;
@@ -656,6 +660,10 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", async () => {
     manualReviews?.cancel();
     orchestrator.cancel();
+    if (skipStatusTimer) {
+      clearTimeout(skipStatusTimer);
+      skipStatusTimer = undefined;
+    }
     if (reviewDisplay) {
       reviewDisplay.stop();
       reviewDisplay = null;

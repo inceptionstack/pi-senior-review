@@ -614,7 +614,7 @@ spawn("hardno", ["review", ...pathHints], {
 });
 ```
 
-Path hints are capped to avoid arg limits. The full path/tool-call set lives in the harness event file.
+Path hints are capped to avoid arg limits. The full path/tool-call set lives in the harness input file.
 
 ### stdout/stderr
 
@@ -856,7 +856,7 @@ Step 5.3: publish.
 | Streaming progress buffers until exit.                         | NDJSON writes flush per line; test with slow fake child.                                 |
 | pi-sdk auth missing outside pi process.                        | Map to `BACKEND_AUTH_ERROR`; document pi-sdk auth as v1 hard dependency.                 |
 | Judge loses pi bash context.                                   | Use `HARDNO_HARNESS_INPUT_FILE` with tool calls.                                         |
-| Too many path args exceed OS limits.                           | Cap args; put full path list in harness event file.                                      |
+| Too many path args exceed OS limits.                           | Cap args; put full path list in harness input file.                                      |
 | Temp harness file leaks sensitive data.                        | Create with `0600`; truncate tool results; delete in `finally`.                          |
 | Child review survives cancel.                                  | SIGTERM, 5-second grace, SIGKILL, stdin-close abort.                                     |
 | Logs collide across concurrent runs.                           | Include `runId` and `reviewId` in log lines and filenames.                               |

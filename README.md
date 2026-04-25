@@ -227,6 +227,23 @@ You can cancel a review at any time:
 
 Cancellation stops the current review immediately, including architect reviews. The agent continues normally.
 
+## Push guard
+
+The extension automatically blocks `git push` when:
+
+- **A review is in progress** — wait for the review to complete
+- **The last review found issues** — fix the issues and get LGTM first
+
+The block applies to any `bash` tool call matching `git push` (including `git -C <dir> push`, `git push origin main`, etc.). The agent sees a clear "Push blocked" message explaining why.
+
+The block clears automatically when:
+
+- The next review returns **LGTM**
+- The review **skips** with "no files to review" (issues resolved by deletion/revert)
+- You do a **full reset** (`Ctrl+Alt+Shift+R`)
+
+No git hooks are needed — this is enforced at the extension level via pi's `tool_call` event interception.
+
 ## License
 
 MIT

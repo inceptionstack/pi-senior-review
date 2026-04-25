@@ -10,6 +10,7 @@
 
 import {
   appendFileSync,
+  existsSync,
   mkdirSync,
   readdirSync,
   renameSync,
@@ -143,11 +144,15 @@ export function cleanLogs(): { logsRemoved: number; reviewsRemoved: number } {
   let logsRemoved = 0;
   let reviewsRemoved = 0;
   for (const file of [LOG_FILE, LOG_OLD]) {
+    // rmSync({ force: true }) never throws for missing files, so a bare try/
+    // catch would over-count. Check existence first so the reported number
+    // reflects what was actually removed.
+    if (!existsSync(file)) continue;
     try {
       rmSync(file, { force: true });
       logsRemoved++;
     } catch {
-      /* already gone */
+      /* permissions etc.; best-effort */
     }
   }
   try {

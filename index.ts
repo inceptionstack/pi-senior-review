@@ -145,7 +145,11 @@ export default function (pi: ExtensionAPI) {
     pendingArgs.clear();
     fileCapWarned = false;
     // Don't clear skipStatusShowing here — finishReview calls resetTrackingState
-    // right after renderOutcome sets the skip status. Only agent_start clears it.
+    // right after renderOutcome sets the skip status. The flag is only cleared
+    // in two places: the top of runAutoReview when the next review cycle
+    // starts, and tool_execution_start when the agent performs real file
+    // activity. (It used to also clear on agent_start, but that made the skip
+    // indicator vanish on the next user prompt — removed.)
     updateStatus(ctx);
   }
 

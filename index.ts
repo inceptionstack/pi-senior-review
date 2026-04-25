@@ -136,6 +136,7 @@ export default function (pi: ExtensionAPI) {
     // when ctx.cwd isn't itself a git repo.
     pendingArgs.clear();
     fileCapWarned = false;
+    skipStatusShowing = false;
     updateStatus(ctx);
   }
 
@@ -566,7 +567,7 @@ export default function (pi: ExtensionAPI) {
       manualReviews?.cancel();
       orchestrator.reset();
       detectedGitRoots.clear(); // full reset clears session-level state too
-      if (skipStatusShowing) skipStatusShowing = false;
+      skipStatusShowing = false;
       if (reviewDisplay) {
         reviewDisplay.stop();
         reviewDisplay = null;
@@ -654,7 +655,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", async () => {
     manualReviews?.cancel();
     orchestrator.cancel();
-    if (skipStatusShowing) skipStatusShowing = false;
+    skipStatusShowing = false;
     if (reviewDisplay) {
       reviewDisplay.stop();
       reviewDisplay = null;

@@ -1,0 +1,42 @@
+{
+  "version": "v1",
+  "dev": [
+    {"id":"dev-01","command":"ls -la","expected":"inspection_vcs_noop","notes":"pure read"},
+    {"id":"dev-02","command":"pwd","expected":"inspection_vcs_noop","notes":"pure read"},
+    {"id":"dev-03","command":"cat package.json","expected":"inspection_vcs_noop","notes":"pure read"},
+    {"id":"dev-04","command":"grep -r 'foo' src","expected":"inspection_vcs_noop","notes":"pure read"},
+    {"id":"dev-05","command":"git status","expected":"inspection_vcs_noop","notes":"vcs read"},
+    {"id":"dev-06","command":"git log --oneline -10","expected":"inspection_vcs_noop","notes":"vcs read"},
+    {"id":"dev-07","command":"git diff HEAD~1..HEAD","expected":"inspection_vcs_noop","notes":"vcs read"},
+    {"id":"dev-08","command":"git show HEAD","expected":"inspection_vcs_noop","notes":"vcs read"},
+    {"id":"dev-09","command":"echo \"---\"","expected":"inspection_vcs_noop","notes":"harmless output"},
+    {"id":"dev-10","command":"printf 'done\\n'","expected":"inspection_vcs_noop","notes":"harmless output"},
+    {"id":"dev-11","command":"test -f package.json","expected":"inspection_vcs_noop","notes":"harmless test"},
+    {"id":"dev-12","command":"git add -A","expected":"modifying","notes":"vcs mutation — stages files"},
+    {"id":"dev-13","command":"git commit -m \"wip\"","expected":"modifying","notes":"vcs mutation — commits"},
+    {"id":"dev-14","command":"git push origin main","expected":"modifying","notes":"vcs mutation — pushes remote"},
+    {"id":"dev-15","command":"git reset --hard HEAD~1","expected":"modifying","notes":"destructive vcs"},
+    {"id":"dev-16","command":"touch newfile.ts","expected":"modifying","notes":"file mutation"},
+    {"id":"dev-17","command":"rm -rf /tmp/x","expected":"modifying","notes":"file deletion"},
+    {"id":"dev-18","command":"cp src/a.ts src/b.ts","expected":"modifying","notes":"file copy"},
+    {"id":"dev-19","command":"mv old.ts new.ts","expected":"modifying","notes":"file rename"},
+    {"id":"dev-20","command":"npm install","expected":"modifying","notes":"installs deps, modifies node_modules + lockfile"},
+    {"id":"dev-21","command":"npm run format","expected":"modifying","notes":"formatter rewrites files"},
+    {"id":"dev-22","command":"make build","expected":"modifying","notes":"build produces artifacts"},
+    {"id":"dev-23","command":"./scripts/deploy.sh","expected":"unsure","notes":"unknown local script"},
+    {"id":"dev-24","command":"npm run custom-thing","expected":"unsure","notes":"unknown npm script"},
+    {"id":"dev-25","command":"git commi","expected":"unsure","notes":"truncated/unknown git subcommand"}
+  ],
+  "held_out": [
+    {"id":"ho-01","command":"git status && echo \"---\" && git log --oneline -5","expected":"inspection_vcs_noop","notes":"TODAY'S BUG — safe compound that got misclassified"},
+    {"id":"ho-02","command":"rg foo src | head -20","expected":"inspection_vcs_noop","notes":"read compound with pipe"},
+    {"id":"ho-03","command":"git checkout -b tmp-branch","expected":"modifying","notes":"creates branch"},
+    {"id":"ho-04","command":"find . -name '*.tmp' -delete","expected":"modifying","notes":"find with delete action"},
+    {"id":"ho-05","command":"cat package.json > /tmp/pkg.json","expected":"modifying","notes":"redirect = file write"},
+    {"id":"ho-06","command":"sed -i 's/foo/bar/g' src/a.ts","expected":"modifying","notes":"sed -i is in-place edit"},
+    {"id":"ho-07","command":"echo \"test\" > output.txt","expected":"modifying","notes":"echo + redirect = write"},
+    {"id":"ho-08","command":"./bin/custom-build --verbose","expected":"unsure","notes":"unknown script"},
+    {"id":"ho-09","command":"git rev-parse --show-toplevel","expected":"inspection_vcs_noop","notes":"vcs read-only"},
+    {"id":"ho-10","command":"cd /tmp && ls && echo done","expected":"inspection_vcs_noop","notes":"safe compound"}
+  ]
+}

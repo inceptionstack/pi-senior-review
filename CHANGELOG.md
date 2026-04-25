@@ -35,6 +35,17 @@
 - **Non-modifying command list expanded** — Added `rg`, `grep`, `ag`, `ack`, `sort`, `uniq`, `cut`, `tr`, `awk`, `cat`, `head`, `tail`, `wc`, `jq`, `yq`, `stat`, `tree`, etc.
 - **Git status cache per root** — Tool-call verification caches `dir→root` and `root→changedFiles` maps to avoid redundant git calls across files in the same repo.
 
+### Eval Infrastructure (research, not shipped)
+
+- **`eval/` directory** — Permanent harness + fixtures + results scaffolding for model selection on the bash-command classifier subsystem (`model-eval-plan.md`). Not part of the shipped extension runtime; lint/prettier/tsc exclude `eval/`.
+  - `eval/fixtures.json` — 25 dev + 10 held-out bash commands labelled with expected classification (`inspection_vcs_noop` | `modifying` | `unsure`).
+  - `eval/lib.mjs` — shared helpers: `aggregate`, `percentile`, `renderSummary`, `loadLatestResults`, `groupMismatches`.
+  - `eval/run-eval.mjs` — harness that calls real Bedrock models via the pi SDK and writes JSONL.
+  - `eval/summarize.mjs` — replays any historical JSONL with an invariant-checked metrics table.
+  - `eval/analyze.mjs` — per-fixture mismatch breakdown + per-fixture model-agreement matrix.
+  - `eval/RESULTS.md` — first-run findings: all three candidate models (Haiku 4.5, Nova Micro, Nova Lite) passed the zero-false-noop kill metric; Haiku 4.5 is the recommendation pending shadow-mode validation.
+  - `eval/results/` — gitignored JSONL output.
+
 ### Documentation
 
 - **README** — Rewrote roundup → architect terminology throughout. Added push guard section, updated status bar examples, updated settings table (`architectEnabled`), config files (`.lgtm/architect.md`).

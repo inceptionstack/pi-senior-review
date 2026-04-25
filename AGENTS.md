@@ -8,8 +8,8 @@ A [pi](https://github.com/badlogic/pi-mono) extension that automatically reviews
 
 ```
 pi-lgtm/
-├── index.ts              ← Extension entry point, pi wiring, UI (~590 lines)
-├── orchestrator.ts       ← Auto-review state machine & sequencing (~335 lines)
+├── index.ts              ← Extension entry point, pi wiring, UI (~760 lines)
+├── orchestrator.ts       ← Auto-review state machine & sequencing (~420 lines)
 ├── commands.ts           ← Manual review commands (/review N, /review-all, etc.)
 ├── reviewer.ts           ← Spawns pi session, runs review, parses verdict
 ├── message-sender.ts     ← sendReviewResult — formats & sends review messages
@@ -25,7 +25,7 @@ pi-lgtm/
 ├── review-display.ts     ← TUI widget (ASCII art + file progress)
 ├── scaffold.ts           ← Template content for /scaffold-review-files
 ├── default-review-rules.md ← Default review criteria (OWASP, SOLID, DRY, etc.)
-├── test/                 ← 267 tests across 10 files (vitest)
+├── test/                 ← 307 tests across 12 files (vitest)
 └── .lgtm/       ← Local config (settings.json, review-rules.md, etc.)
 ```
 
@@ -151,7 +151,7 @@ Triggers automatically when >1 file was reviewed across the session AND content 
 - Tests use vitest (`describe`, `it`, `expect`)
 - Test names follow descriptive pattern: `functionName > scenario > expected behavior`
 - Pure functions are tested directly; I/O-heavy functions are tested with mocks
-- 267 tests across 10 test files (including orchestrator state machine tests)
+- 307 tests across 12 test files (including orchestrator state machine tests)
 
 ## Common modification scenarios
 

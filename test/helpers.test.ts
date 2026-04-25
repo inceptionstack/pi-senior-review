@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { clampCommitCount, createReviewId, shouldDiffAllCommits, truncateDiff } from "../helpers";
+import {
+  clampCommitCount,
+  computeReviewTimeoutMs,
+  createReviewId,
+  REVIEW_PER_FILE_BUDGET_MS,
+  shouldDiffAllCommits,
+  truncateDiff,
+} from "../helpers";
 
 describe("createReviewId", () => {
   it("createReviewId_Default_ReturnsExpectedFormat", () => {
@@ -76,5 +83,31 @@ describe("truncateDiff", () => {
     expect(result.length).toBeGreaterThan(100); // includes the note
     expect(result).toContain("... (diff truncated, 50 chars omitted)");
     expect(result.startsWith("a".repeat(100))).toBe(true);
+  });
+});
+
+describe("computeReviewTimeoutMs", () => {
+  it("returns the user-configured minimum when no files are being reviewed", () => {
+    // Scaled component is 0 * 120_000 = 0, so min wins.
+    expect(computeReviewTimeoutMs(30_000, 0)).toBe(30_000);
+  });
+
+  it("returns the user-configured minimum when it exceeds the per-file scaling", () => {
+    // 10 min vs 2 files * 2 min = 4 min — user floor wins.
+    expect(computeReviewTimeoutMs(600_000, 2)).toBe(600_000);
+  });
+
+  it("scales up with file count when the per-file budget dominates", () => {
+    // 5 files * 120s = 600s > 120s default.
+    expect(computeReviewTimeoutMs(120_000, 5)).toBe(5 * REVIEW_PER_FILE_BUDGET_MS);
+  });
+
+  it("treats negative file counts as zero (defensive)", () => {
+    expect(computeReviewTimeoutMs(30_000, -3)).toBe(30_000);
+  });
+
+  it("per-file budget constant is 120s", () => {
+    // Lock in the documented budget so a careless change trips this test.
+    expect(REVIEW_PER_FILE_BUDGET_MS).toBe(120_000);
   });
 });

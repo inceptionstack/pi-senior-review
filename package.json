@@ -1,6 +1,6 @@
 {
   "name": "@inceptionstack/pi-lgtm",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "Pi extension — automatic code review after every agent turn",
   "license": "MIT",

@@ -95,6 +95,7 @@ export default function (pi: ExtensionAPI) {
   function startReviewWidget(
     ctx: { ui: any; hasUI?: boolean },
     files: string[],
+    timeoutMs = 0,
   ): {
     onActivity: (desc: string) => void;
     onToolCall: (toolName: string, targetPath: string | null) => void;
@@ -110,6 +111,7 @@ export default function (pi: ExtensionAPI) {
       maxLoops: settings.maxReviewLoops,
       model: settings.model,
       startTime: Date.now(),
+      timeoutMs,
       toolCounts: new Map(),
       lastToolDesc: new Map(),
       totalToolCalls: 0,
@@ -312,21 +314,21 @@ export default function (pi: ExtensionAPI) {
         onArchitectToolCall: (toolName, targetPath) => {
           if (reviewDisplay) reviewDisplay.recordToolCall(toolName, targetPath);
         },
-        onContentReady: (files) => {
+        onContentReady: (files, _loopCount, timeoutMs) => {
           try {
             updateStatus(ctx);
-            reviewCallbacks = startReviewWidget(ctx, files);
+            reviewCallbacks = startReviewWidget(ctx, files, timeoutMs);
           } catch (err: any) {
             log(`WARNING: onContentReady callback failed: ${err?.message ?? err}`);
           }
         },
-        onArchitectStart: (files) => {
+        onArchitectStart: (files, timeoutMs) => {
           try {
             if (!reviewDisplay) return;
             const ui = safeGetUi(ctx);
             const uiTheme = ui?.theme;
             if (!uiTheme?.fg || !uiTheme?.bold) {
-              reviewDisplay.setArchitectMode(files);
+              reviewDisplay.setArchitectMode(files, undefined, timeoutMs);
               return;
             }
             const modules = inferArchModules(files);
@@ -335,7 +337,7 @@ export default function (pi: ExtensionAPI) {
               bold: uiTheme.bold.bind(uiTheme) as (t: string) => string,
             };
             const archDiagram = buildArchDiagram(modules, null, theme);
-            reviewDisplay.setArchitectMode(files, archDiagram);
+            reviewDisplay.setArchitectMode(files, archDiagram, timeoutMs);
           } catch (err: any) {
             log(`WARNING: onArchitectStart callback failed: ${err?.message ?? err}`);
             log(`WARNING stack: ${err?.stack ?? "(no stack)"}`);

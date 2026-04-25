@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { type ContentSizeLimits, FALLBACK_LIMITS, type ReviewContent } from "./context";
 import { hasFileChanges, isFormattingOnlyTurn, collectModifiedPaths } from "./changes";
 import type { TrackedToolCall } from "./changes";
-import { createReviewId } from "./helpers";
+import { createReviewId, computeReviewTimeoutMs } from "./helpers";
 import { buildReviewPrompt } from "./prompt";
 import type { AutoReviewSettings } from "./settings";
 import { runArchitectReview, shouldRunArchitectReview } from "./architect";
@@ -60,8 +60,8 @@ export interface ReviewOrchestratorInput {
   onToolCall?: (toolName: string, targetPath: string | null) => void;
   onArchitectActivity?: (description: string) => void;
   onArchitectToolCall?: (toolName: string, targetPath: string | null) => void;
-  onContentReady?: (files: string[], loopCount: number) => void;
-  onArchitectStart?: (files: string[]) => void;
+  onContentReady?: (files: string[], loopCount: number, timeoutMs: number) => void;
+  onArchitectStart?: (files: string[], timeoutMs: number) => void;
   /** Check if a file still exists on disk. Used to prune deleted files from architect review. */
   fileExists?: (path: string) => Promise<boolean>;
 }
@@ -190,7 +190,11 @@ export class ReviewOrchestrator {
         return { type: "skipped", reason: "duplicate_content" };
       }
 
-      input.onContentReady?.(best.files, this.loopCount);
+      const seniorTimeoutMs = computeReviewTimeoutMs(
+        input.settings.reviewTimeoutMs,
+        best.files.length,
+      );
+      input.onContentReady?.(best.files, this.loopCount, seniorTimeoutMs);
       log(
         `[${seniorReviewId}] Reviewing ${best.files.length} files via ${best.label || "git diff"}: ${best.files.join(", ")}`,
       );
@@ -302,7 +306,7 @@ export class ReviewOrchestrator {
       cwd: input.cwd,
       model: input.settings.model,
       thinkingLevel: input.settings.thinkingLevel,
-      timeoutMs: Math.max(input.settings.reviewTimeoutMs, content.files.length * 120_000),
+      timeoutMs: computeReviewTimeoutMs(input.settings.reviewTimeoutMs, content.files.length),
       filesReviewed: content.files,
       reviewId,
       onActivity: input.onActivity,
@@ -341,13 +345,12 @@ export class ReviewOrchestrator {
     const architectReviewId = createReviewId();
     const fileCount = this.sessionChangedFiles.size;
     // Architect explores the codebase with grep/read across many files; scale the timeout
-    // with session file count like the senior review does. Otherwise the default 120s is
-    // easily exhausted by a dozen tool calls on a multi-file change.
-    const architectTimeoutMs = Math.max(input.settings.reviewTimeoutMs, fileCount * 120_000);
+    // with session file count like the senior review does.
+    const architectTimeoutMs = computeReviewTimeoutMs(input.settings.reviewTimeoutMs, fileCount);
     log(
       `[${architectReviewId}] architect: running — ${fileCount} files reviewed across session (timeoutMs=${architectTimeoutMs})`,
     );
-    input.onArchitectStart?.([...this.sessionChangedFiles]);
+    input.onArchitectStart?.([...this.sessionChangedFiles], architectTimeoutMs);
 
     try {
       const summaryText = this.sessionChangeSummaries.join("\n\n---\n\n");

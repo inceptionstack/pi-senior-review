@@ -47,3 +47,26 @@ export function truncateDiff(diff: string, maxLen: number): string {
   const omitted = diff.length - maxLen;
   return diff.slice(0, maxLen) + `\n\n... (diff truncated, ${omitted} chars omitted)`;
 }
+
+/**
+ * Per-file budget (ms) for scaling the review timeout with file count.
+ * The reviewer spends time reading + reasoning about each file, so a multi-file
+ * review deserves proportionally more wall-clock budget.
+ */
+export const REVIEW_PER_FILE_BUDGET_MS = 120_000;
+
+/**
+ * Compute the effective wall-clock budget for a review run.
+ *
+ * Takes the larger of the user-configured minimum (`settings.reviewTimeoutMs`)
+ * and a per-file scaling factor (`fileCount * REVIEW_PER_FILE_BUDGET_MS`), so
+ * small reviews respect the user's floor and large reviews get enough headroom.
+ *
+ * Centralized here so changing the per-file factor or clamping logic happens
+ * in one place — previously this formula was duplicated in orchestrator.ts
+ * and commands.ts.
+ */
+export function computeReviewTimeoutMs(minTimeoutMs: number, fileCount: number): number {
+  const scaled = Math.max(0, fileCount) * REVIEW_PER_FILE_BUDGET_MS;
+  return Math.max(minTimeoutMs, scaled);
+}

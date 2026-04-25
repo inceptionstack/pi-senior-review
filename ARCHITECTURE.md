@@ -44,10 +44,14 @@ All arrows mean "imports from". No circular dependencies exist.
            ├── architect.ts
            ├── prompt.ts               commands.ts
            ├── changes.ts                  ├── reviewer.ts (direct)
-           └── logger.ts                   ├── context.ts
-                                           ├── prompt.ts
-        context.ts ──────► helpers.ts      ├── ignore.ts
-            │                              └── scaffold.ts
+           ├── helpers.ts                  ├── context.ts
+           └── logger.ts                   ├── prompt.ts
+                                           ├── helpers.ts
+                                           ├── ignore.ts
+                                           └── scaffold.ts
+
+        context.ts ──────► helpers.ts
+            │
             ├──────────► ignore.ts
             │
             ├──────────► changes.ts
@@ -55,11 +59,14 @@ All arrows mean "imports from". No circular dependencies exist.
             └──────────► logger.ts
 
         architect.ts ──► settings.ts (readConfigFile)
+        ignore.ts    ──► settings.ts (readConfigFile)
+        commands.ts  ──► settings.ts (configDirs, plus AutoReviewSettings type)
 
         git-roots.ts ──► (pi SDK)
 
         changes.ts ──── (standalone, no local imports)
-        helpers.ts ──── (standalone, no local imports)
+        helpers.ts ──── (standalone, no local imports — imported by
+                          context.ts, orchestrator.ts, commands.ts)
         logger.ts ───── (standalone, only node:fs + node:path + node:os)
 ```
 
@@ -270,11 +277,11 @@ During reviews, an animated widget renders below the editor:
 
 ```
 ────────────────────────────────────────────────────────────
-    ┌─────────┐   ⣾ Reviewing… [1/100] claude-opus 42s tools: 12
-    │  ◉   ◉  │
+    ┌─────────┐   ⣾ Reviewing… [1/100] claude-opus 42s/4m tools: 12
+    │  ◉   ◉  │     (reviewer may take up to 4m — LLMs explore files out of list order)
     │ ═══════ │   Files:
-    │    ▽    │     ▸ src/index.ts [5] read index.ts ← reviewing
-    │  ╰───╯  │     ✓ src/helpers.ts [3] read helpers.ts
+    │    ▽    │     ▸ src/index.ts [5] read index.ts ← reading
+    │  ╰───╯  │     • src/helpers.ts [3] read helpers.ts
     └────┬────┘     · src/utils.ts
     ╭────┴────╮
    ╱│ SENIOR  │╲    reading src/index.ts
@@ -282,6 +289,19 @@ During reviews, an animated widget renders below the editor:
     ╰─────────╯
 ────────────────────────────────────────────────────────────
 ```
+
+File-status markers — no ✓ is ever shown during a live review, because the
+reviewer LLM cross-references across files non-linearly and the widget can't
+honestly claim a file is "done":
+
+- `·` untouched — the reviewer hasn't opened this file yet
+- `•` read at least once — has a positive tool-call count
+- `▸ … ← reading` currently the last-touched file via `read`/`grep`/`find`/`ls`
+  (bash commands don't set this, since the command string isn't a file path)
+
+Header shows `elapsed/timeout` (e.g. `42s/4m`) using the same
+`computeReviewTimeoutMs(settings.reviewTimeoutMs, files.length)` budget as
+the reviewer itself, so users know when a long review is expected vs. stuck.
 
 The widget tracks:
 

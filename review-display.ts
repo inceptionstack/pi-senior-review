@@ -72,6 +72,20 @@ const ARCHITECT_FRAMES: string[][] = [
 
 const SPINNER_FRAMES = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"];
 
+/**
+ * Format a duration (seconds) compactly: `42s`, `2m`, `2m30s`, `1h5m`.
+ * Used for the elapsed/timeout header — short enough to fit next to the model name.
+ */
+export function formatDuration(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  if (s < 60) return `${s}s`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const rem = s % 60;
+  if (h > 0) return rem === 0 && m === 0 ? `${h}h` : `${h}h${m}m`;
+  return rem === 0 ? `${m}m` : `${m}m${rem}s`;
+}
+
 // ── Types ────────────────────────────────────────────
 
 export interface ReviewDisplayState {
@@ -82,6 +96,8 @@ export interface ReviewDisplayState {
   maxLoops: number;
   model: string;
   startTime: number;
+  /** Max wall-clock budget for this review in ms (shown in the header). */
+  timeoutMs: number;
   /** Tool usage count per file (keyed by file path from files[]) */
   toolCounts: Map<string, number>;
   /** Last tool description per file */
@@ -101,7 +117,7 @@ export interface ReviewDisplayHandle {
   /** Record a tool call, associating it with the best-matching file. */
   recordToolCall(toolName: string, targetPath: string | null): void;
   /** Switch to architect mode with different ASCII art and the full session file list. */
-  setArchitectMode(sessionFiles: string[], archDiagram?: string[]): void;
+  setArchitectMode(sessionFiles: string[], archDiagram?: string[], timeoutMs?: number): void;
   stop(): void;
 }
 
@@ -109,17 +125,25 @@ export interface ReviewDisplayHandle {
 
 /**
  * Find the best matching file in the file list for a given path.
- * Matches by suffix (e.g. "/foo/bar/index.ts" matches "index.ts" in the list).
- * Returns the matched file path or null.
+ *
+ * Matches are required to align on a path-segment boundary, so e.g. reading
+ * `node_modules/pkg/index.ts` will NOT light up `src/index.ts` just because
+ * both end in `index.ts` — the only boundary is between `pkg/` and `index.ts`
+ * in the path, but the file ends in `src/index.ts` and the check `path.endsWith("/" + f)`
+ * fails. Loose suffix matching used to cause spurious ✓ checkmarks on files the
+ * reviewer only glanced at incidentally.
+ *
+ * Returns the matched file path from `files[]` or null.
  */
-function findMatchingFile(files: string[], path: string): string | null {
+export function findMatchingFile(files: string[], path: string): string | null {
   if (!path) return null;
   // Exact match first
   const exact = files.find((f) => f === path);
   if (exact) return exact;
-  // Suffix match: path ends with the file, or file ends with path
+  // Path-segment-boundary suffix match — one side must be a proper tail of the other,
+  // starting at a directory separator. This avoids `/foo/bar.ts` matching `r.ts`.
   for (const f of files) {
-    if (f.endsWith(path) || path.endsWith(f)) return f;
+    if (path.endsWith("/" + f) || f.endsWith("/" + path)) return f;
   }
   return null;
 }
@@ -300,19 +324,31 @@ export function buildReviewWidget(
 
   // Build info panel (right side)
   const infoLines: string[] = [];
-  const elapsed = ((Date.now() - state.startTime) / 1000).toFixed(0);
+  const elapsedSec = Math.floor((Date.now() - state.startTime) / 1000);
   const modelShort = (state.model || "").split("/").pop() ?? "";
   const toolInfo =
     state.totalToolCalls > 0 ? theme.fg("dim", ` tools: ${state.totalToolCalls}`) : "";
   const reviewType = state.isArchitect ? "Architect Review" : "Reviewing";
+  const timeoutStr =
+    state.timeoutMs > 0
+      ? ` ${formatDuration(elapsedSec)}/${formatDuration(Math.floor(state.timeoutMs / 1000))}`
+      : ` ${formatDuration(elapsedSec)}`;
 
   infoLines.push(
     theme.fg("accent", theme.bold(`${spinner} ${reviewType}…`)) +
       theme.fg("dim", ` [${state.loopCount}/${state.maxLoops}]`) +
       theme.fg("dim", ` ${modelShort}`) +
-      theme.fg("dim", ` ${elapsed}s`) +
+      theme.fg("dim", timeoutStr) +
       toolInfo,
   );
+  if (state.timeoutMs > 0) {
+    infoLines.push(
+      theme.fg(
+        "dim",
+        `  (reviewer may take up to ${formatDuration(Math.floor(state.timeoutMs / 1000))} — LLMs explore files out of list order)`,
+      ),
+    );
+  }
   infoLines.push("");
 
   if (state.isArchitect && state.archDiagram && state.archDiagram.length > 0) {
@@ -334,12 +370,18 @@ export function buildReviewWidget(
           ? theme.fg("dim", ` [${count}]`) + (lastDesc ? theme.fg("dim", ` ${lastDesc}`) : "")
           : "";
 
+      // During a live review we cannot know when a file is "done" — the reviewer
+      // LLM cross-references across files non-linearly. So we use three neutral states:
+      //   ·  untouched        →  dim
+      //   •  read at least once → muted
+      //   ▸  currently being read (last tool target) → accent, with "← reading" label
+      // No ✓ checkmark is shown during the review — it would be misleading.
       if (f === state.activeFile) {
         infoLines.push(
-          `  ${theme.fg("accent", "▸")} ${theme.fg("warning", shortPath)}${toolTag} ${theme.fg("warning", "← reviewing")}`,
+          `  ${theme.fg("accent", "▸")} ${theme.fg("warning", shortPath)}${toolTag} ${theme.fg("warning", "← reading")}`,
         );
       } else if (count > 0) {
-        infoLines.push(`  ${theme.fg("success", "✓")} ${theme.fg("muted", shortPath)}${toolTag}`);
+        infoLines.push(`  ${theme.fg("muted", "•")} ${theme.fg("muted", shortPath)}${toolTag}`);
       } else {
         infoLines.push(`  ${theme.fg("dim", "·")} ${theme.fg("muted", shortPath)}`);
       }
@@ -445,8 +487,13 @@ export function startReviewDisplay(
       state.totalToolCalls++;
       const desc = formatToolDesc(toolName, targetPath);
 
-      // Try to associate this tool call with a file
-      const match = targetPath ? findMatchingFile(state.files, targetPath) : null;
+      // Try to associate this tool call with a file — but only for file-reading tools.
+      // For `bash`, targetPath is the full command string (e.g. `cat src/foo.ts`), which
+      // can spuriously suffix-match filenames and cause the active-file indicator to
+      // jump to unrelated entries. Leave activeFile unchanged in that case.
+      const canMatchFile =
+        toolName === "read" || toolName === "grep" || toolName === "find" || toolName === "ls";
+      const match = canMatchFile && targetPath ? findMatchingFile(state.files, targetPath) : null;
       if (match) {
         state.toolCounts.set(match, (state.toolCounts.get(match) ?? 0) + 1);
         state.lastToolDesc.set(match, desc);
@@ -478,7 +525,7 @@ export function startReviewDisplay(
 
       redraw();
     },
-    setArchitectMode(sessionFiles: string[], archDiagram?: string[]) {
+    setArchitectMode(sessionFiles: string[], archDiagram?: string[], timeoutMs?: number) {
       state.isArchitect = true;
       state.files = sessionFiles;
       state.archDiagram = archDiagram ?? null;
@@ -488,6 +535,12 @@ export function startReviewDisplay(
       state.lastToolDesc = new Map();
       state.totalToolCalls = 0;
       state.startTime = Date.now();
+      state.activeFile = null;
+      // Unconditionally reset the timeout budget — the architect phase has its own
+      // budget distinct from the senior review. If the caller doesn't provide one,
+      // fall back to 0 (header shows elapsed only) rather than leaking the stale
+      // senior timeout into the architect display.
+      state.timeoutMs = typeof timeoutMs === "number" && timeoutMs > 0 ? timeoutMs : 0;
       state.activity = "architecture review…";
       redraw();
     },

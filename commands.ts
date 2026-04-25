@@ -2,7 +2,13 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 import { type AutoReviewSettings, configDirs } from "./settings";
 import { buildReviewPrompt } from "./prompt";
-import { clampCommitCount, createReviewId, shouldDiffAllCommits, truncateDiff } from "./helpers";
+import {
+  clampCommitCount,
+  computeReviewTimeoutMs,
+  createReviewId,
+  shouldDiffAllCommits,
+  truncateDiff,
+} from "./helpers";
 import { runReviewSession } from "./reviewer";
 import { sendReviewResult } from "./message-sender";
 import { isBinaryPath } from "./changes";
@@ -44,7 +50,7 @@ export interface RegisterCommandsOptions {
   getLastUserMessage: () => string | null;
   getDetectedGitRoots: () => Set<string>;
   toggleReview: (ctx: CommandContext) => void | Promise<void>;
-  startReviewWidget: (ctx: CommandContext, files: string[]) => ReviewCallbacks;
+  startReviewWidget: (ctx: CommandContext, files: string[], timeoutMs?: number) => ReviewCallbacks;
   finishReview: (ctx: CommandContext, resetTracking?: boolean) => void;
   updateStatus: (ctx: CommandContext) => void;
 }
@@ -76,7 +82,7 @@ export function registerReviewCommands(opts: RegisterCommandsOptions): ManualRev
       cwd,
       model: settings.model,
       thinkingLevel: settings.thinkingLevel,
-      timeoutMs: Math.max(settings.reviewTimeoutMs, filesReviewed.length * 120_000),
+      timeoutMs: computeReviewTimeoutMs(settings.reviewTimeoutMs, filesReviewed.length),
       filesReviewed,
       reviewId,
       onActivity,
@@ -201,7 +207,15 @@ export function registerReviewCommands(opts: RegisterCommandsOptions): ManualRev
         throwIfCancelled(signal);
         const reviewId = createReviewId();
         log(`[${reviewId}] manual /review ${effectiveCount}: ${changedFiles.length} files`);
-        const { onActivity, onToolCall } = opts.startReviewWidget(ctx, changedFiles);
+        const manualTimeoutMs = computeReviewTimeoutMs(
+          opts.getSettings().reviewTimeoutMs,
+          changedFiles.length,
+        );
+        const { onActivity, onToolCall } = opts.startReviewWidget(
+          ctx,
+          changedFiles,
+          manualTimeoutMs,
+        );
         const result = await runReviewSession(
           prompt,
           buildReviewOptions(signal, ctx.cwd, changedFiles, reviewId, onActivity, onToolCall),
@@ -415,7 +429,11 @@ export function registerReviewCommands(opts: RegisterCommandsOptions): ManualRev
         throwIfCancelled(signal);
         const reviewId = createReviewId();
         log(`[${reviewId}] manual /review-all: ${fullPaths.length} files`);
-        const { onActivity, onToolCall } = opts.startReviewWidget(ctx, fullPaths);
+        const allTimeoutMs = computeReviewTimeoutMs(
+          opts.getSettings().reviewTimeoutMs,
+          fullPaths.length,
+        );
+        const { onActivity, onToolCall } = opts.startReviewWidget(ctx, fullPaths, allTimeoutMs);
         const result = await runReviewSession(
           prompt,
           buildReviewOptions(signal, ctx.cwd, fullPaths, reviewId, onActivity, onToolCall),

@@ -34,6 +34,7 @@ import {
 import { runReviewSession } from "./reviewer";
 import { classifyBashCommand, defaultJudgeRunner } from "./judge";
 import { JudgeSkipChain } from "./judge-skip-chain";
+import { isSpawnedSubSession } from "./session-kind";
 import { sendReviewResult, formatReviewIdFooter } from "./message-sender";
 import { type TrackedToolCall, isFileModifyingTool, collectModifiedPaths } from "./changes";
 import { getBestReviewContent } from "./context";
@@ -70,16 +71,6 @@ export default function (pi: ExtensionAPI) {
   const detectedGitRoots = new Set<string>(); // git repos discovered from file paths or bash git commands
   const pendingArgs = new Map<string, { name: string; input: any }>();
   let lastUserMessage: string | null = null; // captured from before_agent_start
-
-  // Instance liveness flag. Flipped to false in `session_shutdown` so that
-  // any late-arriving async continuation from the *old* extension instance
-  // (after a `/reload` or session replacement) bails out before it tries to
-  // use its captured stale `pi` / `ctx`. Observed symptom without this:
-  // "Review failed (outer): This extension ctx is stale after session
-  // replacement or reload" logged at the start of a phantom second review
-  // cycle that fires ~8ms after the real one completes. The guard is cheap,
-  // defensive, and a no-op for the single-instance (no reload) case.
-  let isInstanceActive = true;
 
   // Load shortcut config synchronously at init (before session_start)
   // so registerShortcut() uses the configured keys.
@@ -311,16 +302,6 @@ export default function (pi: ExtensionAPI) {
   }
 
   async function runAutoReview(ctx: { ui: any; hasUI?: boolean; cwd: string }, source: string) {
-    // Guard: if `session_shutdown` already fired on this instance (i.e. we
-    // are an old, replaced instance whose async continuations are running
-    // after `/reload`), skip silently. Using `pi` or `ctx` from here would
-    // throw the stale-ctx guard and produce a user-facing error toast for a
-    // situation that is purely a leftover race — the new instance has
-    // already handled (or will handle) this turn.
-    if (!isInstanceActive) {
-      log(`runAutoReview: skipping (instance inactive, source=${source})`);
-      return;
-    }
     try {
       const allRoots = await resolveAllGitRoots(
         pi,
@@ -690,9 +671,12 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.on("agent_end", async (event, ctx) => {
-    // First guard: if this extension instance is shutting down (e.g. `/reload`
-    // tore us down), don't try to kick off work that would use stale `pi`.
-    if (!isInstanceActive) return;
+    // First guard: if pi-lgtm is loaded into a spawned sub-session (e.g. the
+    // reviewer session created by runReviewSession), do nothing. Without
+    // this, our handler recursively triggers a review inside the reviewer
+    // session, then crashes with "ctx is stale" once reviewer.ts disposes
+    // that session. See session-kind.ts for the full rationale + detection.
+    if (isSpawnedSubSession(pi)) return;
 
     // Don't interfere if a toggle-review is in progress (confirm dialog open)
     if (isToggling) return;
@@ -891,10 +875,6 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async () => {
-    // Mark this instance as inactive *first* so any in-flight async work
-    // (e.g. a runAutoReview continuation resuming after an await) bails out
-    // before it touches the now-stale `pi`/`ctx`.
-    isInstanceActive = false;
     manualReviews?.cancel();
     orchestrator.cancel();
     skipStatusShowing = false;

@@ -246,6 +246,15 @@ export default function (pi: ExtensionAPI) {
   let fileCapWarned = false;
   let skipStatusShowing = false;
 
+  // Loop safeguard for judge-skip chains. Each judge_read_only outcome that
+  // we follow up with triggerTurn bumps this; it resets on any other outcome
+  // type (completed / error / cancelled / max_loops / other skip reasons).
+  // If we hit the cap we still post the chat message but stop triggering new
+  // turns so a runaway "agent keeps exploring, judge keeps skipping" chain
+  // can't loop forever. See the brainstorm notes in the judge feature's PR.
+  const MAX_JUDGE_SKIP_TRIGGER_CHAIN = 3;
+  let consecutiveJudgeSkipTriggers = 0;
+
   async function toggleReview(ctx: {
     ui: any;
     hasUI?: boolean;
@@ -533,25 +542,44 @@ export default function (pi: ExtensionAPI) {
         // (a) the judge actually did work (an LLM call) — the user should see
         //     their opt-in feature operate
         // (b) the status bar is transient; chat is a persistent audit trail
-        // No triggerTurn: the user was already at a stopping point when the
-        // review would have fired; we don't want to re-run the agent.
+        // We also triggerTurn so the agent can continue naturally (e.g. after
+        // a read-only `git status` the user may have asked for a push-if-clean
+        // flow; the agent needs to be woken up to proceed).
+        //
+        // Loop safeguard: if we've already chained MAX_JUDGE_SKIP_TRIGGER_CHAIN
+        // judge-skip-triggered turns, stop triggering so the chain can't
+        // runaway. User can /review-judge-toggle off or prompt manually.
         if (outcome.reason === "judge_read_only") {
+          consecutiveJudgeSkipTriggers += 1;
+          const shouldTrigger = consecutiveJudgeSkipTriggers <= MAX_JUDGE_SKIP_TRIGGER_CHAIN;
+          const baseMsg = `⚖️ **Review skipped by judge** — all bash commands this turn classified as read-only (no file mutation). Skipping the main review.`;
+          const footer = `_Model: \`${settings.judgeModel.split("/").pop()}\` — toggle with \`/review-judge-toggle\`_`;
+          const content = shouldTrigger
+            ? `${baseMsg}\n\n${footer}`
+            : `${baseMsg}\n\n⚠️ Chain of ${consecutiveJudgeSkipTriggers} consecutive judge-skips reached — not triggering another turn to avoid a loop. Reply to me or \`/review-judge-toggle\` off if you want to proceed.\n\n${footer}`;
           pi.sendMessage(
             {
               customType: "code-review",
-              content: `⚖️ **Review skipped by judge** — all bash commands this turn classified as read-only (no file mutation). Skipping the main review.\n\n_Model: \`${settings.judgeModel.split("/").pop()}\` — toggle with \`/review-judge-toggle\`_`,
+              content,
               display: true,
             },
-            { triggerTurn: false, deliverAs: "followUp" },
+            { triggerTurn: shouldTrigger, deliverAs: "followUp" },
           );
+        } else {
+          // Non-judge skip reason — reset the chain counter so a later
+          // judge-skip gets the full benefit of the cap again.
+          consecutiveJudgeSkipTriggers = 0;
         }
         return;
       }
       case "cancelled":
+        consecutiveJudgeSkipTriggers = 0;
         return;
       case "max_loops":
+        consecutiveJudgeSkipTriggers = 0;
         return;
       case "error": {
+        consecutiveJudgeSkipTriggers = 0;
         const errMsg = outcome.error.message;
         pi.sendMessage(
           {
@@ -564,6 +592,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       case "completed": {
+        consecutiveJudgeSkipTriggers = 0;
         const hasArchitectStep = Boolean(outcome.architect);
         const hasArchitectFailure = Boolean(outcome.architectFailure);
         const hasFollowUp = hasArchitectStep || hasArchitectFailure;

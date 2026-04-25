@@ -637,9 +637,12 @@ export default function (pi: ExtensionAPI) {
 
               // Switch widget to roundup mode with inferred architecture diagram
               if (reviewDisplay) {
-                const modules = inferArchModules([...sessionChangedFiles]);
-                const archDiagram = buildArchDiagram(modules, null, ctx.ui.theme as any);
-                reviewDisplay.setRoundupMode(archDiagram);
+                const allFiles = [...sessionChangedFiles];
+                const modules = inferArchModules(allFiles);
+                // Wrap theme to match buildArchDiagram's string-based color API
+                const theme = { fg: ctx.ui.theme.fg as (c: string, t: string) => string, bold: ctx.ui.theme.bold };
+                const archDiagram = buildArchDiagram(modules, null, theme);
+                reviewDisplay.setRoundupMode(allFiles, archDiagram);
               }
 
               try {

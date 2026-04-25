@@ -12,59 +12,38 @@
 // A senior dev peering at code through reading glasses.
 // Two frames for a subtle animation (alternating the eyes/glasses).
 
-const SENIOR_FRAMES = [
-  [
-    `    ┌─────────┐ `,
-    `    │  ◉   ◉  │ `,
-    `    │ ═══════ │ `,
-    `    │    ▽    │ `,
-    `    │  ╰───╯  │ `,
-    `    └────┬────┘ `,
-    `    ╭────┴────╮ `,
-    `   ╱│ SENIOR  │╲`,
-    `  ╱ │ REVIEW  │ ╲`,
-    `    ╰─────────╯ `,
-  ],
-  [
-    `    ┌─────────┐ `,
-    `    │  ◎   ◎  │ `,
-    `    │ ═══════ │ `,
-    `    │    ▽    │ `,
-    `    │  ╰───╯  │ `,
-    `    └────┬────┘ `,
-    `    ╭────┴────╮ `,
-    `   ╱│ SENIOR  │╲`,
-    `  ╱ │ REVIEW  │ ╲`,
-    `    ╰─────────╯ `,
-  ],
-];
+function buildArtFrames(label: string): string[][] {
+  const padded = label.length > 7 ? label.slice(0, 7) : label.padStart(Math.floor((7 + label.length) / 2)).padEnd(7);
+  return [
+    [
+      `    ┌─────────┐ `,
+      `    │  ◉   ◉  │ `,
+      `    │ ═══════ │ `,
+      `    │    ▽    │ `,
+      `    │  ╰───╯  │ `,
+      `    └────┬────┘ `,
+      `    ╭────┴────╮ `,
+      `   ╱│${padded} │╲`,
+      `  ╱ │ REVIEW  │ ╲`,
+      `    ╰─────────╯ `,
+    ],
+    [
+      `    ┌─────────┐ `,
+      `    │  ◎   ◎  │ `,
+      `    │ ═══════ │ `,
+      `    │    ▽    │ `,
+      `    │  ╰───╯  │ `,
+      `    └────┬────┘ `,
+      `    ╭────┴────╮ `,
+      `   ╱│${padded} │╲`,
+      `  ╱ │ REVIEW  │ ╲`,
+      `    ╰─────────╯ `,
+    ],
+  ];
+}
 
-const ROUNDUP_FRAMES = [
-  [
-    `    ┌─────────┐ `,
-    `    │  ◉   ◉  │ `,
-    `    │ ═══════ │ `,
-    `    │    ▽    │ `,
-    `    │  ╰───╯  │ `,
-    `    └────┬────┘ `,
-    `    ╭────┴────╮ `,
-    `   ╱│ROUNDUP │╲`,
-    `  ╱ │ REVIEW  │ ╲`,
-    `    ╰─────────╯ `,
-  ],
-  [
-    `    ┌─────────┐ `,
-    `    │  ◎   ◎  │ `,
-    `    │ ═══════ │ `,
-    `    │    ▽    │ `,
-    `    │  ╰───╯  │ `,
-    `    └────┬────┘ `,
-    `    ╭────┴────╮ `,
-    `   ╱│ROUNDUP │╲`,
-    `  ╱ │ REVIEW  │ ╲`,
-    `    ╰─────────╯ `,
-  ],
-];
+const SENIOR_FRAMES = buildArtFrames("SENIOR");
+const ROUNDUP_FRAMES = buildArtFrames("ROUNDUP");
 
 const SPINNER_FRAMES = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"];
 
@@ -96,8 +75,8 @@ export interface ReviewDisplayHandle {
   update(patch: Partial<ReviewDisplayState>): void;
   /** Record a tool call, associating it with the best-matching file. */
   recordToolCall(toolName: string, targetPath: string | null): void;
-  /** Switch to roundup mode with different ASCII art. */
-  setRoundupMode(archDiagram?: string[]): void;
+  /** Switch to roundup mode with different ASCII art and the full session file list. */
+  setRoundupMode(sessionFiles: string[], archDiagram?: string[]): void;
   stop(): void;
 }
 
@@ -423,8 +402,9 @@ export function startReviewDisplay(
 
       redraw();
     },
-    setRoundupMode(archDiagram?: string[]) {
+    setRoundupMode(sessionFiles: string[], archDiagram?: string[]) {
       state.isRoundup = true;
+      state.files = sessionFiles;
       state.archDiagram = archDiagram ?? null;
       state.archActiveModule = null;
       // Reset tool counts for the roundup phase

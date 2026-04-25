@@ -82,10 +82,15 @@ export function registerReviewCommands(opts: RegisterCommandsOptions): ManualRev
     };
   }
 
-  function beginManualReview(ctx: CommandContext) {
+  function beginManualReview(ctx: CommandContext): AbortSignal {
     isReviewing = true;
     reviewAbort = new AbortController();
     opts.updateStatus(ctx);
+    return reviewAbort.signal;
+  }
+
+  function throwIfCancelled(signal: AbortSignal) {
+    if (signal.aborted) throw new Error("Review cancelled");
   }
 
   function finishManualReview(ctx: CommandContext) {
@@ -126,7 +131,7 @@ export function registerReviewCommands(opts: RegisterCommandsOptions): ManualRev
         cancelInProgress();
       }
 
-      beginManualReview(ctx);
+      const signal = beginManualReview(ctx);
 
       try {
         const countResult = await gitExec(ctx.cwd, ["rev-list", "--count", "HEAD"]);
@@ -194,10 +199,11 @@ export function registerReviewCommands(opts: RegisterCommandsOptions): ManualRev
         const commitLabel = `last ${effectiveCount} commit${effectiveCount > 1 ? "s" : ""}`;
 
         const prompt = `${buildReviewPrompt(opts.getAutoReviewRules(), opts.getCustomRules(), opts.getLastUserMessage())}\n\n---\n\nReview the following git diff (${commitLabel}):\n\nCommits:\n${commitLog}\n\nDiff:\n\`\`\`diff\n${truncatedDiff}\n\`\`\``;
+        throwIfCancelled(signal);
         const { onActivity, onToolCall } = opts.startReviewWidget(ctx, changedFiles);
         const result = await runReviewSession(
           prompt,
-          buildReviewOptions(reviewAbort!.signal, ctx.cwd, changedFiles, onActivity, onToolCall),
+          buildReviewOptions(signal, ctx.cwd, changedFiles, onActivity, onToolCall),
         );
 
         sendReviewResult(opts.pi, result, commitLabel);
@@ -222,7 +228,7 @@ export function registerReviewCommands(opts: RegisterCommandsOptions): ManualRev
         cancelInProgress();
       }
 
-      beginManualReview(ctx);
+      const signal = beginManualReview(ctx);
 
       try {
         const { resolve } = await import("node:path");
@@ -409,10 +415,11 @@ export function registerReviewCommands(opts: RegisterCommandsOptions): ManualRev
           return gitRoot ? `${gitRoot}/${f}` : resolve(ctx.cwd, f);
         });
 
+        throwIfCancelled(signal);
         const { onActivity, onToolCall } = opts.startReviewWidget(ctx, fullPaths);
         const result = await runReviewSession(
           prompt,
-          buildReviewOptions(reviewAbort!.signal, ctx.cwd, fullPaths, onActivity, onToolCall),
+          buildReviewOptions(signal, ctx.cwd, fullPaths, onActivity, onToolCall),
         );
 
         sendReviewResult(opts.pi, result, "all changes");

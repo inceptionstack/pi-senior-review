@@ -194,6 +194,8 @@ export class ReviewOrchestrator {
           smallBest.content.trim().length < MIN_REVIEW_CONTENT_LENGTH
         ) {
           log("Fallback content too small, skipping review");
+          this.lastReviewHadIssues = false;
+          this.loopCount = 0;
           return { type: "skipped", reason: "fallback_too_small" };
         }
         best = smallBest;

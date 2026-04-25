@@ -12,27 +12,28 @@
 // A senior dev peering at code through reading glasses.
 // Two frames for a subtle animation (alternating the eyes/glasses).
 
-// Senior: round eyes, friendly smile. Frame 2 raises an eyebrow + enlarges one eye.
+// Senior: round head, round eyes, friendly smile.
+// Frame 2 raises an eyebrow + enlarges one eye (curious/skeptical).
 const SENIOR_FRAMES: string[][] = [
   [
-    `    ┌─────────┐ `,
+    `    ╭─────────╮ `,
     `    │  ─   ─  │ `,
     `    │  ◉   ◉  │ `,
     `    │    ▽    │ `,
     `    │  ╰───╯  │ `,
-    `    └────┬────┘ `,
+    `    ╰────┬────╯ `,
     `    ╭────┴────╮ `,
     `   ╱│ SENIOR  │╲`,
     `  ╱ │ REVIEW  │ ╲`,
     `    ╰─────────╯ `,
   ],
   [
-    `    ┌─────────┐ `,
+    `    ╭─────────╮ `,
     `    │  ─   ╱  │ `,
     `    │  ◉   ⊙  │ `,
     `    │    ▽    │ `,
     `    │  ╰───╯  │ `,
-    `    └────┬────┘ `,
+    `    ╰────┬────╯ `,
     `    ╭────┴────╮ `,
     `   ╱│ SENIOR  │╲`,
     `  ╱ │ REVIEW  │ ╲`,
@@ -40,28 +41,28 @@ const SENIOR_FRAMES: string[][] = [
   ],
 ];
 
-// Architect: double-line borders, square eyes, stern mouth.
-// Frame 2 furrows an eyebrow + squints one eye.
+// Architect: angular head, double-line borders, square eyes, stern mouth.
+// Frame 2 furrows an eyebrow + squints one eye (stern scrutiny).
 const ARCHITECT_FRAMES: string[][] = [
   [
-    `    ╔═════════╗ `,
+    `    ╱═════════╲ `,
     `    ║  ─   ─  ║ `,
     `    ║  ■   ■  ║ `,
     `    ║    △    ║ `,
     `    ║  ┗━━━┛  ║ `,
-    `    ╚════╤════╝ `,
+    `    ╲════╤════╱ `,
     `    ╭────┴────╮ `,
     `   ╱│ARCHITCT │╲`,
     `  ╱ │ REVIEW  │ ╲`,
     `    ╰─────────╯ `,
   ],
   [
-    `    ╔═════════╗ `,
+    `    ╱═════════╲ `,
     `    ║  ╲   ─  ║ `,
     `    ║  ▪   ■  ║ `,
     `    ║    △    ║ `,
     `    ║  ┗━━━┛  ║ `,
-    `    ╚════╤════╝ `,
+    `    ╲════╤════╱ `,
     `    ╭────┴────╮ `,
     `   ╱│ARCHITCT │╲`,
     `  ╱ │ REVIEW  │ ╲`,

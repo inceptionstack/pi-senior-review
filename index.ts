@@ -33,6 +33,7 @@ import {
 } from "./settings";
 import { runReviewSession } from "./reviewer";
 import { classifyBashCommand, defaultJudgeRunner } from "./judge";
+import { JudgeSkipChain } from "./judge-skip-chain";
 import { sendReviewResult, formatReviewIdFooter } from "./message-sender";
 import { type TrackedToolCall, isFileModifyingTool, collectModifiedPaths } from "./changes";
 import { getBestReviewContent } from "./context";
@@ -251,13 +252,13 @@ export default function (pi: ExtensionAPI) {
   let skipStatusShowing = false;
 
   // Loop safeguard for judge-skip chains. Each judge_read_only outcome that
-  // we follow up with triggerTurn bumps this; it resets on any other outcome
-  // type (completed / error / cancelled / max_loops / other skip reasons).
-  // If we hit the cap we still post the chat message but stop triggering new
-  // turns so a runaway "agent keeps exploring, judge keeps skipping" chain
-  // can't loop forever. See the brainstorm notes in the judge feature's PR.
-  const MAX_JUDGE_SKIP_TRIGGER_CHAIN = 3;
-  let consecutiveJudgeSkipTriggers = 0;
+  // we follow up with triggerTurn bumps the counter; it resets on any other
+  // outcome type (completed / error / cancelled / max_loops / other skip
+  // reasons). If we hit the cap we still post the chat message but stop
+  // triggering new turns so a runaway "agent keeps exploring, judge keeps
+  // skipping" chain can't loop forever. State + message formatting live in
+  // judge-skip-chain.ts so they can be unit-tested without the pi SDK.
+  const judgeSkipChain = new JudgeSkipChain();
 
   async function toggleReview(ctx: {
     ui: any;
@@ -566,40 +567,37 @@ export default function (pi: ExtensionAPI) {
         // a read-only `git status` the user may have asked for a push-if-clean
         // flow; the agent needs to be woken up to proceed).
         //
-        // Loop safeguard: if we've already chained MAX_JUDGE_SKIP_TRIGGER_CHAIN
-        // judge-skip-triggered turns, stop triggering so the chain can't
-        // runaway. User can /review-judge-toggle off or prompt manually.
+        // Loop safeguard: `JudgeSkipChain` caps consecutive judge-skip
+        // triggers so a runaway "agent keeps exploring, judge keeps skipping"
+        // chain can't loop forever. Once the cap is hit we still post the
+        // chat message but suppress `triggerTurn` so the agent halts and
+        // waits for user input. User can /review-judge-toggle off or prompt
+        // manually. State + message formatting live in judge-skip-chain.ts.
         if (outcome.reason === "judge_read_only") {
-          consecutiveJudgeSkipTriggers += 1;
-          const shouldTrigger = consecutiveJudgeSkipTriggers <= MAX_JUDGE_SKIP_TRIGGER_CHAIN;
-          const baseMsg = `⚖️ **Review skipped by judge** — all bash commands this turn classified as read-only (no file mutation). Skipping the main review.`;
-          const footer = `_Model: \`${settings.judgeModel.split("/").pop()}\` — toggle with \`/review-judge-toggle\`_`;
-          const content = shouldTrigger
-            ? `${baseMsg}\n\n${footer}`
-            : `${baseMsg}\n\n⚠️ Chain of ${consecutiveJudgeSkipTriggers} consecutive judge-skips reached — not triggering another turn to avoid a loop. Reply to me or \`/review-judge-toggle\` off if you want to proceed.\n\n${footer}`;
+          const { content, triggerTurn } = judgeSkipChain.handleJudgeSkip(settings.judgeModel);
           pi.sendMessage(
             {
               customType: "code-review",
               content,
               display: true,
             },
-            { triggerTurn: shouldTrigger, deliverAs: "followUp" },
+            { triggerTurn, deliverAs: "followUp" },
           );
         } else {
           // Non-judge skip reason — reset the chain counter so a later
           // judge-skip gets the full benefit of the cap again.
-          consecutiveJudgeSkipTriggers = 0;
+          judgeSkipChain.reset();
         }
         return;
       }
       case "cancelled":
-        consecutiveJudgeSkipTriggers = 0;
+        judgeSkipChain.reset();
         return;
       case "max_loops":
-        consecutiveJudgeSkipTriggers = 0;
+        judgeSkipChain.reset();
         return;
       case "error": {
-        consecutiveJudgeSkipTriggers = 0;
+        judgeSkipChain.reset();
         const errMsg = outcome.error.message;
         pi.sendMessage(
           {
@@ -612,7 +610,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       case "completed": {
-        consecutiveJudgeSkipTriggers = 0;
+        judgeSkipChain.reset();
         const hasArchitectStep = Boolean(outcome.architect);
         const hasArchitectFailure = Boolean(outcome.architectFailure);
         const hasFollowUp = hasArchitectStep || hasArchitectFailure;
@@ -738,7 +736,7 @@ export default function (pi: ExtensionAPI) {
       orchestrator.reset();
       detectedGitRoots.clear(); // full reset clears session-level state too
       skipStatusShowing = false;
-      consecutiveJudgeSkipTriggers = 0;
+      judgeSkipChain.reset();
       if (reviewDisplay) {
         reviewDisplay.stop();
         reviewDisplay = null;
@@ -828,7 +826,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     orchestrator.reset();
     detectedGitRoots.clear(); // session-level: clear on new session
-    consecutiveJudgeSkipTriggers = 0;
+    judgeSkipChain.reset();
 
     const [rules, autoRules, settingsResult, patterns, rRules] = await Promise.all([
       loadReviewRules(ctx.cwd),
@@ -866,7 +864,7 @@ export default function (pi: ExtensionAPI) {
     manualReviews?.cancel();
     orchestrator.cancel();
     skipStatusShowing = false;
-    consecutiveJudgeSkipTriggers = 0;
+    judgeSkipChain.reset();
     if (reviewDisplay) {
       reviewDisplay.stop();
       reviewDisplay = null;

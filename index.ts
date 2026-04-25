@@ -534,6 +534,7 @@ export default function (pi: ExtensionAPI) {
     getAutoReviewRules: () => autoReviewRules,
     getIgnorePatterns: () => ignorePatterns,
     getLastUserMessage: () => lastUserMessage,
+    getDetectedGitRoots: () => detectedGitRoots,
     toggleReview,
     startReviewWidget,
     finishReview,

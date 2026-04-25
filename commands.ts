@@ -42,6 +42,7 @@ export interface RegisterCommandsOptions {
   getAutoReviewRules: () => string | null;
   getIgnorePatterns: () => string[] | null;
   getLastUserMessage: () => string | null;
+  getDetectedGitRoots: () => Set<string>;
   toggleReview: (ctx: CommandContext) => void | Promise<void>;
   startReviewWidget: (ctx: CommandContext, files: string[]) => ReviewCallbacks;
   finishReview: (ctx: CommandContext, resetTracking?: boolean) => void;
@@ -226,8 +227,19 @@ export function registerReviewCommands(opts: RegisterCommandsOptions): ManualRev
         const gitCheck = await opts.pi.exec("git", ["rev-parse", "--show-toplevel"], {
           timeout: 5000,
         });
-        const isGitRepo = gitCheck.code === 0;
-        const gitRoot = isGitRepo ? gitCheck.stdout.trim() : null;
+        let isGitRepo = gitCheck.code === 0;
+        let gitRoot = isGitRepo ? gitCheck.stdout.trim() : null;
+
+        // If cwd isn't a git repo, try the first detected git root from the session
+        // (e.g. the agent was working in ~/some-repo but cwd is ~)
+        if (!isGitRepo) {
+          const detectedRoots = opts.getDetectedGitRoots();
+          if (detectedRoots.size > 0) {
+            gitRoot = [...detectedRoots][0];
+            isGitRepo = true;
+            log(`review-all: cwd is not a git repo, using detected root: ${gitRoot}`);
+          }
+        }
 
         let reviewFiles: string[] = [];
         let prompt: string;
@@ -333,6 +345,18 @@ export function registerReviewCommands(opts: RegisterCommandsOptions): ManualRev
             prompt = `${buildReviewPrompt(opts.getAutoReviewRules(), opts.getCustomRules(), opts.getLastUserMessage())}\n\n---\n\nReview the last commit: ${commitLog}\n\n## Files to review\n\nRead each file with read(path) to see its full contents.\n\n${fileSections.join("\n\n---\n\n")}`;
           }
         } else {
+          // ── Path C: not a git repo — refuse to scan home or root directories ──
+          const { homedir } = await import("node:os");
+          const home = homedir();
+          if (ctx.cwd === home || ctx.cwd === "/" || ctx.cwd === "/tmp") {
+            ctx.ui.notify(
+              `Cannot review: cwd is ${ctx.cwd} (not a project directory).\n\n` +
+                `Run /review-all from inside a git repo, or use /review <N> to review specific commits.`,
+              "warning",
+            );
+            return;
+          }
+
           const findResult = await opts.pi.exec(
             "find",
             [

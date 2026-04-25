@@ -163,17 +163,33 @@ export async function runReviewSession(prompt: string, opts: ReviewOptions): Pro
   const startedAt = new Date().toISOString();
   log(`reviewer: starting (prompt=${(prompt.length / 1000).toFixed(1)}k chars, cwd=${opts.cwd})`);
 
-  const authStorage = AuthStorage.create();
-  const modelRegistry = ModelRegistry.create(authStorage);
+  let authStorage: ReturnType<typeof AuthStorage.create>;
+  let modelRegistry: ReturnType<typeof ModelRegistry.create>;
+  try {
+    authStorage = AuthStorage.create();
+    modelRegistry = ModelRegistry.create(authStorage);
+  } catch (err: any) {
+    log(`reviewer: failed to create auth/model registry: ${err?.message ?? err}`);
+    log(`reviewer: stack: ${err?.stack ?? "(no stack)"}`);
+    throw err;
+  }
 
-  const { session } = await createAgentSession({
-    cwd: opts.cwd,
-    sessionManager: SessionManager.inMemory(),
-    authStorage,
-    modelRegistry,
-    // Allowlist only read-only tools + bash; no write/edit for the reviewer
-    tools: ["read", "bash", "grep", "find", "ls"],
-  });
+  let session: Awaited<ReturnType<typeof createAgentSession>>["session"];
+  try {
+    const result = await createAgentSession({
+      cwd: opts.cwd,
+      sessionManager: SessionManager.inMemory(),
+      authStorage,
+      modelRegistry,
+      // Allowlist only read-only tools + bash; no write/edit for the reviewer
+      tools: ["read", "bash", "grep", "find", "ls"],
+    });
+    session = result.session;
+  } catch (err: any) {
+    log(`reviewer: createAgentSession failed: ${err?.message ?? err}`);
+    log(`reviewer: stack: ${err?.stack ?? "(no stack)"}`);
+    throw err;
+  }
   log(`reviewer: session created, initial model=${session.model?.provider}/${session.model?.id}`);
 
   // Set the reviewer model if specified

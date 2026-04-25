@@ -71,6 +71,16 @@ export default function (pi: ExtensionAPI) {
   const pendingArgs = new Map<string, { name: string; input: any }>();
   let lastUserMessage: string | null = null; // captured from before_agent_start
 
+  // Instance liveness flag. Flipped to false in `session_shutdown` so that
+  // any late-arriving async continuation from the *old* extension instance
+  // (after a `/reload` or session replacement) bails out before it tries to
+  // use its captured stale `pi` / `ctx`. Observed symptom without this:
+  // "Review failed (outer): This extension ctx is stale after session
+  // replacement or reload" logged at the start of a phantom second review
+  // cycle that fires ~8ms after the real one completes. The guard is cheap,
+  // defensive, and a no-op for the single-instance (no reload) case.
+  let isInstanceActive = true;
+
   // Load shortcut config synchronously at init (before session_start)
   // so registerShortcut() uses the configured keys.
   const shortcutConfig = loadShortcutSettingsSync(process.cwd());
@@ -301,6 +311,16 @@ export default function (pi: ExtensionAPI) {
   }
 
   async function runAutoReview(ctx: { ui: any; hasUI?: boolean; cwd: string }, source: string) {
+    // Guard: if `session_shutdown` already fired on this instance (i.e. we
+    // are an old, replaced instance whose async continuations are running
+    // after `/reload`), skip silently. Using `pi` or `ctx` from here would
+    // throw the stale-ctx guard and produce a user-facing error toast for a
+    // situation that is purely a leftover race — the new instance has
+    // already handled (or will handle) this turn.
+    if (!isInstanceActive) {
+      log(`runAutoReview: skipping (instance inactive, source=${source})`);
+      return;
+    }
     try {
       const allRoots = await resolveAllGitRoots(
         pi,
@@ -670,6 +690,10 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.on("agent_end", async (event, ctx) => {
+    // First guard: if this extension instance is shutting down (e.g. `/reload`
+    // tore us down), don't try to kick off work that would use stale `pi`.
+    if (!isInstanceActive) return;
+
     // Don't interfere if a toggle-review is in progress (confirm dialog open)
     if (isToggling) return;
 
@@ -785,6 +809,12 @@ export default function (pi: ExtensionAPI) {
           "info",
         );
       }
+      // Toggling is explicit user activity — clear any persistent skip
+      // indicator so the new `⚖ judge` state renders immediately.
+      // Without this, `updateStatus` early-returns when `skipStatusShowing`
+      // is true (left over from a prior judge_read_only/no_meaningful_changes
+      // skip) and the user sees the old status until the next real activity.
+      skipStatusShowing = false;
       updateStatus(ctx);
     },
   });
@@ -861,6 +891,10 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async () => {
+    // Mark this instance as inactive *first* so any in-flight async work
+    // (e.g. a runAutoReview continuation resuming after an await) bails out
+    // before it touches the now-stale `pi`/`ctx`.
+    isInstanceActive = false;
     manualReviews?.cancel();
     orchestrator.cancel();
     skipStatusShowing = false;

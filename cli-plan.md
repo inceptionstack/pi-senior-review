@@ -369,7 +369,7 @@ Private subprocess env:
 
 | Env var                     | Purpose                                                          |
 | --------------------------- | ---------------------------------------------------------------- |
-| `HARDNO_HARNESS_EVENT_FILE` | JSON metadata file written by `pi-lgtm`; not public CLI surface. |
+| `HARDNO_HARNESS_INPUT_FILE` | JSON metadata file written by `pi-lgtm`; not public CLI surface. |
 | `HARDNO_RUN_ID`             | Optional run id for correlation.                                 |
 
 ### Harness event file
@@ -377,7 +377,7 @@ Private subprocess env:
 `pi-lgtm` writes this temp file before spawning hardno so hardno can preserve judge behavior and change summaries.
 
 ```ts
-interface HardnoHarnessEventFile {
+interface HardnoHarnessInputFile {
   schemaVersion: 1;
   harness: "pi-lgtm";
   harnessVersion: string;
@@ -496,7 +496,7 @@ V1 hardno uses `@mariozechner/pi-coding-agent` auth storage internally. The user
   }
   ```
 
-**Harness input file carries pre-computed signals.** Where the orchestrator used to call `hasFileChanges(toolCalls)` / `isFormattingOnlyTurn(toolCalls)` itself, pi-lgtm now does that work BEFORE spawning hardno and writes the booleans into the harness input file. Schema addition (also rename `HardnoHarnessEventFile` → `HardnoHarnessInputFile` for consistency with the `HARDNO_HARNESS_INPUT_FILE` env var):
+**Harness input file carries pre-computed signals.** Where the orchestrator used to call `hasFileChanges(toolCalls)` / `isFormattingOnlyTurn(toolCalls)` itself, pi-lgtm now does that work BEFORE spawning hardno and writes the booleans into the harness input file (renamed from the earlier `HardnoHarnessEventFile` / `HARDNO_HARNESS_EVENT_FILE` for consistency with the `HARDNO_HARNESS_INPUT_FILE` env var — references throughout this plan use the new name). Schema addition:
 
 ```ts
 interface HardnoHarnessInputFile {
@@ -608,7 +608,7 @@ spawn("hardno", ["review", ...pathHints], {
     ...process.env,
     HARDNO_OUTPUT: "ndjson",
     HARDNO_RUN_ID: runId,
-    HARDNO_HARNESS_EVENT_FILE: tempJsonPath,
+    HARDNO_HARNESS_INPUT_FILE: tempJsonPath,
   },
   stdio: ["pipe", "pipe", "pipe"],
 });
@@ -759,7 +759,7 @@ Step 4.2: Replace auto-review wiring.
 
 - Files: `index.ts`, `message-sender.ts`, tests.
 - Remove imports from moved modules.
-- Write `HardnoHarnessEventFile` to temp file with `0600`.
+- Write `HardnoHarnessInputFile` to temp file with `0600`.
 - Spawn hardno, feed progress to widget, render final result.
 - Done when auto-review tests pass with fake hardno output.
 
@@ -855,7 +855,7 @@ Step 5.3: publish.
 | Users put config in `.lgtm/` and hardno ignores it.            | `started` event includes config source; docs and `0.3.0` changelog show migration table. |
 | Streaming progress buffers until exit.                         | NDJSON writes flush per line; test with slow fake child.                                 |
 | pi-sdk auth missing outside pi process.                        | Map to `BACKEND_AUTH_ERROR`; document pi-sdk auth as v1 hard dependency.                 |
-| Judge loses pi bash context.                                   | Use `HARDNO_HARNESS_EVENT_FILE` with tool calls.                                         |
+| Judge loses pi bash context.                                   | Use `HARDNO_HARNESS_INPUT_FILE` with tool calls.                                         |
 | Too many path args exceed OS limits.                           | Cap args; put full path list in harness event file.                                      |
 | Temp harness file leaks sensitive data.                        | Create with `0600`; truncate tool results; delete in `finally`.                          |
 | Child review survives cancel.                                  | SIGTERM, 5-second grace, SIGKILL, stdin-close abort.                                     |

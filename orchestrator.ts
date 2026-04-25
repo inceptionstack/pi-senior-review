@@ -29,6 +29,9 @@ export type ReviewOutcome =
       type: "completed";
       senior: ReviewStepResult;
       architect?: ReviewStepResult;
+      /** Populated when architect was supposed to run but failed (timeout, error).
+       *  Distinct from `architect` being undefined because it was skipped by the trigger logic. */
+      architectFailure?: { reviewId: string; error: Error };
       files: string[];
     };
 
@@ -237,9 +240,24 @@ export class ReviewOrchestrator {
         this.lastReviewHadIssues = false;
         this.loopCount = 0;
 
-        const architect = await this.runArchitectIfNeeded(input);
-        if (architect) {
-          return { type: "completed", senior, architect, files: best.files };
+        const architectOutcome = await this.runArchitectIfNeeded(input);
+        if (architectOutcome && "step" in architectOutcome) {
+          return {
+            type: "completed",
+            senior,
+            architect: architectOutcome.step,
+            files: best.files,
+          };
+        }
+        if (architectOutcome && "failure" in architectOutcome) {
+          // Architect attempted but failed (timeout, error). Surface to the caller
+          // so the user sees a message instead of a silent swallow.
+          return {
+            type: "completed",
+            senior,
+            architectFailure: architectOutcome.failure,
+            files: best.files,
+          };
         }
         // No architect ran — clear session accumulators so stale files
         // from this cycle don't leak into a future unrelated cycle.
@@ -300,7 +318,9 @@ export class ReviewOrchestrator {
 
   private async runArchitectIfNeeded(
     input: ReviewOrchestratorInput,
-  ): Promise<ReviewStepResult | undefined> {
+  ): Promise<
+    { step: ReviewStepResult } | { failure: { reviewId: string; error: Error } } | undefined
+  > {
     // Prune deleted files from session accumulator before checking architect trigger
     if (input.fileExists) {
       const existing = new Set<string>();
@@ -319,8 +339,13 @@ export class ReviewOrchestrator {
 
     this.architectDone = true;
     const architectReviewId = createReviewId();
+    const fileCount = this.sessionChangedFiles.size;
+    // Architect explores the codebase with grep/read across many files; scale the timeout
+    // with session file count like the senior review does. Otherwise the default 120s is
+    // easily exhausted by a dozen tool calls on a multi-file change.
+    const architectTimeoutMs = Math.max(input.settings.reviewTimeoutMs, fileCount * 120_000);
     log(
-      `[${architectReviewId}] architect: running — ${this.sessionChangedFiles.size} files reviewed across session`,
+      `[${architectReviewId}] architect: running — ${fileCount} files reviewed across session (timeoutMs=${architectTimeoutMs})`,
     );
     input.onArchitectStart?.([...this.sessionChangedFiles]);
 
@@ -333,14 +358,15 @@ export class ReviewOrchestrator {
         customRules: input.architectRules,
         sessionChangeSummary: summaryText,
         reviewId: architectReviewId,
+        timeoutMs: architectTimeoutMs,
         onActivity: input.onArchitectActivity,
         onToolCall: input.onArchitectToolCall,
       });
-      return { result, label: "Architect Review", reviewId: architectReviewId };
+      return { step: { result, label: "Architect Review", reviewId: architectReviewId } };
     } catch (err: any) {
       if (err?.message === "Review cancelled") throw err;
       log(`[${architectReviewId}] ERROR: Architect review failed: ${err?.message ?? err}`);
-      return undefined;
+      return { failure: { reviewId: architectReviewId, error: toError(err) } };
     } finally {
       this.sessionChangeSummaries = [];
       this.sessionChangedFiles = new Set();

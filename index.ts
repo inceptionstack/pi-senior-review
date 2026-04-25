@@ -533,16 +533,36 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       case "completed": {
-        const hasArchitect = Boolean(outcome.architect);
+        const hasArchitectStep = Boolean(outcome.architect);
+        const hasArchitectFailure = Boolean(outcome.architectFailure);
+        const hasFollowUp = hasArchitectStep || hasArchitectFailure;
         // Always trigger a turn for ISSUES_FOUND so agent can fix.
         // Also trigger for LGTM so agent can continue (push, etc.).
-        // Skip triggering only when architect follows (it sends its own message).
+        // Skip triggering only when architect (success or failure) follows — it sends its own message.
         sendReviewResult(pi, outcome.senior.result, outcome.senior.label ?? "", {
           showLoopCount: outcome.senior.loopInfo,
           reviewedFiles: outcome.files,
-          triggerTurn: !hasArchitect,
+          triggerTurn: !hasFollowUp,
           reviewId: outcome.senior.reviewId,
         });
+
+        if (outcome.architectFailure) {
+          // Architect was supposed to run but failed (e.g. timed out). Make it visible
+          // instead of silently swallowing — the senior review already passed so the
+          // follow-up context for the agent is "big-picture check didn't finish".
+          const failure = outcome.architectFailure;
+          const architectIdFooter = formatReviewIdFooter(failure.reviewId);
+          const errMsg = failure.error.message || String(failure.error);
+          pi.sendMessage(
+            {
+              customType: "code-review",
+              content: `🏗️ **Architect Review failed**\n\nThe cross-file architecture review did not complete: \`${errMsg.slice(0, 300)}\`\n\nIndividual file reviews passed, but the big-picture check didn't finish. You may want to — at your discretion — rerun the review, inspect cross-file consistency manually, or proceed.${architectIdFooter}`,
+              display: true,
+            },
+            { triggerTurn: true, deliverAs: "followUp" },
+          );
+          return;
+        }
 
         if (!outcome.architect) return;
 

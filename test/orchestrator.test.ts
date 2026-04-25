@@ -232,6 +232,25 @@ describe("ReviewOrchestrator", () => {
     expect(runner).toHaveBeenCalledTimes(2);
   });
 
+  it("Architect timeout scales with session file count (not fixed at default)", async () => {
+    // Architect's timeoutMs should be max(reviewTimeoutMs, fileCount * 120_000) so that
+    // codebase-wide exploration doesn't hit a tight 120s default on multi-file changes.
+    const runner = vi.fn<ReviewRunner>().mockResolvedValue(reviewResult(true));
+    const orchestrator = new ReviewOrchestrator({
+      runner,
+      contentBuilder: mockContentBuilder(longContent(), ["src/a.ts", "src/b.ts", "src/c.ts"], true),
+    });
+
+    await orchestrator.handleAgentEnd(
+      baseInput({ settings: baseSettings({ reviewTimeoutMs: 60_000 }) }),
+    );
+
+    // Second call is the architect; expect its timeoutMs to be >= 3 * 120_000 ms
+    expect(runner).toHaveBeenCalledTimes(2);
+    const architectCallOpts = runner.mock.calls[1][1];
+    expect(architectCallOpts.timeoutMs).toBeGreaterThanOrEqual(360_000);
+  });
+
   it("Senior LGTM + architect issues: returns completed with both", async () => {
     const runner = vi
       .fn<ReviewRunner>()
@@ -251,7 +270,7 @@ describe("ReviewOrchestrator", () => {
     expect(outcome.architect?.result.text).toBe("- **Medium:** architect issue");
   });
 
-  it("Senior LGTM + architect fails silently: returns completed with senior only (architect error caught)", async () => {
+  it("Senior LGTM + architect fails: returns completed with senior + architectFailure (error surfaced, not silently dropped)", async () => {
     const runner = vi
       .fn<ReviewRunner>()
       .mockResolvedValueOnce(reviewResult(true, "LGTM senior"))
@@ -267,6 +286,9 @@ describe("ReviewOrchestrator", () => {
     if (outcome.type !== "completed") return;
     expect(outcome.senior.result.isLgtm).toBe(true);
     expect(outcome.architect).toBeUndefined();
+    expect(outcome.architectFailure).toBeDefined();
+    expect(outcome.architectFailure?.error.message).toBe("architect failed");
+    expect(outcome.architectFailure?.reviewId).toMatch(/^r-[a-f0-9]{8}$/);
     expect(runner).toHaveBeenCalledTimes(2);
   });
 

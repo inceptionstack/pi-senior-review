@@ -101,6 +101,8 @@ export interface ArchitectReviewOptions {
   sessionChangeSummary: string;
   /** Unique id for the architect review cycle. Separate from the senior review id. */
   reviewId?: string;
+  /** Max wall-clock for the architect's LLM call, in ms. Passed through to the reviewer. */
+  timeoutMs?: number;
   onActivity?: (description: string) => void;
   onToolCall?: (toolName: string, targetPath: string | null) => void;
 }
@@ -119,6 +121,7 @@ export async function runArchitectReview(
     cwd: opts.cwd,
     model: opts.model,
     reviewId: opts.reviewId,
+    timeoutMs: opts.timeoutMs,
     onActivity: opts.onActivity,
     onToolCall: opts.onToolCall,
   });

@@ -113,42 +113,42 @@
 
 ### Current: 267 tests (10 files)
 
-| File                            | Tests | Coverage                                                       |
-| ------------------------------- | ----- | -------------------------------------------------------------- |
-| `test/helpers.test.ts`          | 11    | `helpers.ts` fully covered                                     |
-| `test/ignore.test.ts`           | 14    | `ignore.ts` fully covered                                      |
-| `test/changes.test.ts`          | 43    | `changes.ts` fully covered (incl. `isNonFileModifyingCommand`) |
-| `test/settings.test.ts`         | 19    | `settings.ts` parseSettings fully covered                      |
-| `test/prompt.test.ts`           | 7     | `prompt.ts` fully covered                                      |
-| `test/reviewer.test.ts`         | 15    | `reviewer.ts` cleanReviewText + isLgtmResult                   |
-| `test/context.test.ts`          | 6     | `context.ts` formatReviewContext                               |
-| `test/roundup.test.ts`          | 5     | `roundup.ts` buildRoundupPrompt                                |
-| `test/git-roots.test.ts`        | 17    | `git-roots.ts` fully covered (incl. tilde expansion)           |
-| `test/readChangedFiles.test.ts` | 12    | `context.ts` readChangedFiles                                  |
+| File                        | Tests | Coverage                                                       |
+| --------------------------- | ----- | -------------------------------------------------------------- |
+| `test/architect.test.ts`    | 12    | `architect.ts` fully covered                                   |
+| `test/changes.test.ts`      | 92    | `changes.ts` fully covered (incl. `isNonFileModifyingCommand`) |
+| `test/context.test.ts`      | 6     | `context.ts` formatReviewContext                               |
+| `test/git-roots.test.ts`    | 17    | `git-roots.ts` fully covered (incl. tilde expansion)           |
+| `test/helpers.test.ts`      | 11    | `helpers.ts` fully covered                                     |
+| `test/ignore.test.ts`       | 14    | `ignore.ts` fully covered                                      |
+| `test/orchestrator.test.ts` | 19    | `orchestrator.ts` state machine                                |
+| `test/prompt.test.ts`       | 15    | `prompt.ts` fully covered                                      |
+| `test/reviewer.test.ts`     | 31    | `reviewer.ts` cleanReviewText + isLgtmResult + parseVerdict    |
+| `test/settings.test.ts`     | 50    | `settings.ts` parseSettings fully covered                      |
 
 ### Missing tests
 
-| #   | Function                            | File           | Status       |
-| --- | ----------------------------------- | -------------- | ------------ |
-| T1  | `parseSettings`                     | `settings.ts`  | [x] 19 tests |
-| T2  | `formatReviewContext`               | `context.ts`   | [x] 6 tests  |
-| T3  | `buildRoundupPrompt`                | `roundup.ts`   | [x] 5 tests  |
-| T4  | `buildReviewPrompt`                 | `prompt.ts`    | [x] 7 tests  |
-| T5  | reviewer text cleanup               | `reviewer.ts`  | [x] 15 tests |
-| T6  | `resolveGitRoots` + tilde expansion | `git-roots.ts` | [x] 17 tests |
-| T7  | `readChangedFiles`                  | `context.ts`   | [x] 12 tests |
+| #   | Function                            | File              | Status       |
+| --- | ----------------------------------- | ----------------- | ------------ |
+| T1  | `parseSettings`                     | `settings.ts`     | [x] 50 tests |
+| T2  | `formatReviewContext`               | `context.ts`      | [x] 6 tests  |
+| T3  | `buildArchitectPrompt`              | `architect.ts`    | [x] 12 tests |
+| T4  | `buildReviewPrompt`                 | `prompt.ts`       | [x] 15 tests |
+| T5  | reviewer text cleanup               | `reviewer.ts`     | [x] 31 tests |
+| T6  | `resolveGitRoots` + tilde expansion | `git-roots.ts`    | [x] 17 tests |
+| T7  | orchestrator state machine          | `orchestrator.ts` | [x] 19 tests |
 
 ## Execution Order
 
-1. **Extract `settings.ts`** (#5) + tests (T1) — [x] Done, 19 tests
-2. **Extract `prompt.ts`** (#5) + tests (T4) — [x] Done, 7 tests
+1. **Extract `settings.ts`** (#5) + tests (T1) — [x] Done, 50 tests
+2. **Extract `prompt.ts`** (#5) + tests (T4) — [x] Done, 15 tests
 3. **Extract `readChangedFiles`** (#1) — [x] Done
 4. **Extract `resolveAllGitRoots`** (#2) — [x] Done
 5. **Build changeSummary once** (#3) — [x] Done
 6. **Split `getBestReviewContent`** (#6) — [x] Done, 4 path functions
 7. **Extract `finishReview`** (#4) — [x] Done
-8. **Extract reviewer cleanup regex** (T5) + tests — [x] Done, 15 tests
-9. **Add remaining tests** (T2, T3) — [x] Done, 11 tests
+8. **Extract reviewer cleanup regex** (T5) + tests — [x] Done, 31 tests
+9. **Add remaining tests** (T2, T3) — [x] Done
 10. **Final: verify index.ts is orchestration-only** — [x] 685 lines, all logic in modules
 
 ## Rules

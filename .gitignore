@@ -34,3 +34,6 @@ coverage/
 # Local dev config
 .lgtm/
 .hardno/
+
+# Secrets vault
+.psst/

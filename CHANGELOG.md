@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.0 (2026-04-26)
+
+### Breaking Changes
+
+- **Renamed package** — `@inceptionstack/pi-lgtm` → `@inceptionstack/pi-hard-no`
+- **Renamed config directory** — `.lgtm/` → `.hardno/` (both project-local and `~/.pi/.hardno/`)
+- **Renamed GitHub repo** — `inceptionstack/pi-lgtm` → `inceptionstack/pi-hard-no`
+- **Renamed commands** — `/lgtm-rules` → `/hardno-rules`
+
+### Migration
+
+1. `pi uninstall npm:@inceptionstack/pi-lgtm`
+2. `pi install npm:@inceptionstack/pi-hard-no`
+3. Rename `.lgtm/` directories to `.hardno/` (project-local and `~/.pi/.hardno/`)
+
 ## 0.2.1 (2026-04-25)
 
 ### Features

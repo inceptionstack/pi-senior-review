@@ -30,3 +30,7 @@ upstream-pi-fix-brainstorm.md
 # Coverage
 coverage/
 .codex
+
+# Local dev config
+.lgtm/
+.hardno/

@@ -11,7 +11,7 @@
 - Preserve current behavior where practical: senior review, verdict parsing, architect review, config-driven prompts, ignore rules, judge gate, logging, timeout scaling, and context-overflow retry.
 - Keep pi-sdk as the only review backend in v1, but introduce a backend interface so codex, Claude Code, direct API, and shell backends can be added later.
 - Split tests by ownership and keep `npm run check` green in both repos at each commit.
-- Release `pi-hard-no` `0.3.0` as a breaking migration from `.hardno/` review config to `.hardno/`.
+- Release `pi-hard-no` `0.3.0` as a breaking migration from `.lgtm/` review config to `.hardno/`.
 
 ### Non-goals
 
@@ -235,7 +235,7 @@ Precedence:
 2. Global: `$XDG_CONFIG_HOME/hardno/`
 3. Global fallback: `~/.config/hardno/`
 
-Hardno does not read `.hardno/` or `~/.pi/.hardno/`.
+Hardno does not read `.lgtm/` or `~/.pi/.lgtm/`.
 
 ### Files
 
@@ -390,7 +390,7 @@ interface HardnoHarnessInputFile {
 }
 ```
 
-### Migration from `.hardno/settings.json`
+### Migration from `.lgtm/settings.json`
 
 | Old key/file                          | New key/file                                                |
 | ------------------------------------- | ----------------------------------------------------------- |
@@ -402,11 +402,11 @@ interface HardnoHarnessInputFile {
 | `judgeEnabled`                        | `judge.enabled`                                             |
 | `judgeModel`                          | `judge.model`                                               |
 | `judgeTimeoutMs`                      | `judge.timeoutMs`                                           |
-| `.hardno/auto-review.md`              | `.hardno/auto-review.md`                                    |
-| `.hardno/review-rules.md`             | `.hardno/review-rules.md`                                   |
-| `.hardno/architect.md`                | `.hardno/architect.md`                                      |
-| `.hardno/roundup.md`                  | `.hardno/architect.md`                                      |
-| `.hardno/ignore`                      | `.hardno/ignore`                                            |
+| `.lgtm/auto-review.md`                | `.hardno/auto-review.md`                                    |
+| `.lgtm/review-rules.md`               | `.hardno/review-rules.md`                                   |
+| `.lgtm/architect.md`                  | `.hardno/architect.md`                                      |
+| `.lgtm/roundup.md`                    | `.hardno/architect.md`                                      |
+| `.lgtm/ignore`                        | `.hardno/ignore`                                            |
 | `toggleShortcut`, `cancelShortcut`    | pi-hard-no harness config if retained; not hardno settings. |
 
 ### Auth
@@ -422,7 +422,7 @@ V1 hardno uses `@mariozechner/pi-coding-agent` auth storage internally. The user
 | `orchestrator.ts`                  | `hardno-cli/src/orchestrator.ts`             | Move; adapt input to hardno request and event output.                                            |
 | `reviewer.ts`                      | `hardno-cli/src/backends/pi-sdk-reviewer.ts` | Move substantially unchanged; pi-sdk backend only.                                               |
 | `context.ts`                       | `hardno-cli/src/context.ts`                  | Move; replace `ExtensionAPI.exec` with `CommandRunner`; support path hints and harness metadata. |
-| `prompt.ts`                        | `hardno-cli/src/prompt.ts`                   | Move; update comments from `.hardno` to `.hardno`.                                               |
+| `prompt.ts`                        | `hardno-cli/src/prompt.ts`                   | Move; update comments from `.lgtm` to `.hardno`.                                                 |
 | `judge.ts`                         | `hardno-cli/src/judge.ts`                    | Move; keep fail-open classifier.                                                                 |
 | `judge-skip-chain.ts`              | `hardno-cli/src/judge-skip-chain.ts`         | Move; hardno emits skip-chain state/results.                                                     |
 | `architect.ts`                     | `hardno-cli/src/architect.ts`                | Move; read `.hardno/architect.md`; drop `roundup.md` fallback.                                   |
@@ -677,7 +677,7 @@ Step 2.1: Move pure modules.
 
 - Copy: `helpers.ts`, `prompt.ts`, `ignore.ts`, `default-review-rules.md`.
 - Move tests: helpers, prompt, ignore.
-- Update `.hardno` comments to `.hardno`.
+- Update `.lgtm` comments to `.hardno`.
 - Done when moved tests pass.
 
 Step 2.2: Rewrite settings.
@@ -698,7 +698,7 @@ Step 2.4: Move logger.
 - Files: `src/logger.ts`, optional `test/logger.test.ts`.
 - Default logs to `$XDG_STATE_HOME/hardno` or `~/.local/state/hardno`.
 - Include run id and review id in records.
-- Done when no hardno code contains `.pi/.hardno`.
+- Done when no hardno code contains `.pi/.lgtm`.
 
 Step 2.5: Move reviewer backend.
 
@@ -852,7 +852,7 @@ Step 5.3: publish.
 
 | Risk                                                           | Mitigation                                                                               |
 | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Users put config in `.hardno/` and hardno ignores it.          | `started` event includes config source; docs and `0.3.0` changelog show migration table. |
+| Users put config in `.lgtm/` and hardno ignores it.            | `started` event includes config source; docs and `0.3.0` changelog show migration table. |
 | Streaming progress buffers until exit.                         | NDJSON writes flush per line; test with slow fake child.                                 |
 | pi-sdk auth missing outside pi process.                        | Map to `BACKEND_AUTH_ERROR`; document pi-sdk auth as v1 hard dependency.                 |
 | Judge loses pi bash context.                                   | Use `HARDNO_HARNESS_INPUT_FILE` with tool calls.                                         |
@@ -885,7 +885,7 @@ Step 5.3: publish.
 4. Rewrite settings for `.hardno/`; done when config precedence and env tests pass.
 5. Add `CommandRunner`; done when context/git-root code has no pi extension imports.
 6. Move and adapt `context.ts`; done when fallback paths and path hints are tested.
-7. Move `logger.ts`; done when logs use hardno paths and no `.pi/.hardno` remains.
+7. Move `logger.ts`; done when logs use hardno paths and no `.pi/.lgtm` remains.
 8. Move `reviewer.ts` to `backends/pi-sdk-reviewer.ts`; done when verdict, retry, timeout, and cancel tests pass.
 9. Move judge modules; done when fail-open and skip-chain tests pass.
 10. Move architect module; done when trigger and prompt tests pass.

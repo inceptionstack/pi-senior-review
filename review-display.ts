@@ -451,7 +451,7 @@ export function startReviewDisplay(
   function redraw() {
     try {
       const lines = buildReviewWidget(state, animFrame, spinnerFrame, boundTheme);
-      boundSetWidget("lgtm-progress", lines, { placement: "belowEditor" });
+      boundSetWidget("hardno-progress", lines, { placement: "belowEditor" });
     } catch {
       // UI may be stale after session replacement — stop silently
       if (timer) {
@@ -562,7 +562,7 @@ export function startReviewDisplay(
         timer = undefined;
       }
       try {
-        boundSetWidget("lgtm-progress", undefined);
+        boundSetWidget("hardno-progress", undefined);
       } catch {
         // UI may be stale — ignore
       }

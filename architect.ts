@@ -51,8 +51,8 @@ Focus on systemic issues that individual mini-reviews would miss.
 Do NOT repeat issues that were already found and fixed in mini-reviews.`;
 
 /**
- * Load architect review rules from .lgtm/architect.md.
- * Falls back to .lgtm/roundup.md for backwards compatibility.
+ * Load architect review rules from .hardno/architect.md.
+ * Falls back to .hardno/roundup.md for backwards compatibility.
  */
 export async function loadArchitectRules(cwd: string): Promise<string | null> {
   // Try new name first, fall back to old name

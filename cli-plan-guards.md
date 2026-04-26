@@ -2,7 +2,7 @@
 
 ## 1. Problem & scope
 
-Hardno v1.0 extracts review from `pi-lgtm`. Guards are the v1.1+ addition that
+Hardno v1.0 extracts review from `pi-hard-no`. Guards are the v1.1+ addition that
 makes hardno a cross-harness project-policy engine for bash commands. A harness
 asks hardno before a command runs; hardno returns `allow`, `warn`, or `block`.
 
@@ -52,7 +52,7 @@ Flags:
 --json              Emit one JSON object.
 --stdin             Read command from stdin.
 --cwd <path>        Evaluate from this cwd. Default: process cwd.
---harness <name>    pi-lgtm | claude-code | codex | standalone | unknown.
+--harness <name>    pi-hard-no | claude-code | codex | standalone | unknown.
 --session-id <id>   Optional audit/session correlation.
 --tool-call-id <id> Optional audit/tool correlation.
 --source <source>   agent_tool | user_bash | user_input | extension | unknown.
@@ -89,7 +89,7 @@ interface GuardResult {
   runId: string;
   timestamp: string;
   cwd: string;
-  harness: "pi-lgtm" | "claude-code" | "codex" | "standalone" | "unknown";
+  harness: "pi-hard-no" | "claude-code" | "codex" | "standalone" | "unknown";
   source: GuardSource;
   input: { command: string; argv?: string[] };
   decision: GuardDecision;
@@ -458,7 +458,7 @@ Invalidate on policy mtime, hardno state mtime, `.git/index` mtime, or
 `--no-cache`. Harnesses may cache identical `(cwd, command, stateVersion)` for
 500ms but do not own policy.
 
-## 10. Harness integration - pi-lgtm
+## 10. Harness integration - pi-hard-no
 
 Verified useful pi hooks from `extensions.md`:
 
@@ -580,7 +580,7 @@ async function guard(
     "--cwd",
     ctx.cwd,
     "--harness",
-    "pi-lgtm",
+    "pi-hard-no",
     "--source",
     opts.source,
   ];
@@ -896,4 +896,4 @@ v1.4 policy expansion:
 - Should `hardno guard status --json` include full active rules or summaries, and should `git push --dry-run` bypass `review-gate-push`?
 - Should Gerrit-style pushes to `refs/for/*` be exempt?
 - Should `--force-with-lease` be warn rather than block in some projects?
-- Does guard logic stay inside `pi-lgtm`, or move to a future `hardno-pi` plugin?
+- Does guard logic stay inside `pi-hard-no`, or move to a future `hardno-pi` plugin?

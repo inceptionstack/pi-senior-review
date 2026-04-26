@@ -1,4 +1,4 @@
-# AGENTS.md — Agent Guide for pi-lgtm
+# AGENTS.md — Agent Guide for pi-hard-no
 
 ## What is this project?
 
@@ -7,7 +7,7 @@ A [pi](https://github.com/badlogic/pi-mono) extension that automatically reviews
 ## Quick orientation
 
 ```
-pi-lgtm/
+pi-hard-no/
 ├── index.ts              ← Extension entry point, pi wiring, UI (~760 lines)
 ├── orchestrator.ts       ← Auto-review state machine & sequencing (~420 lines)
 ├── commands.ts           ← Manual review commands (/review N, /review-all, etc.)
@@ -18,7 +18,7 @@ pi-lgtm/
 ├── changes.ts            ← Change detection, tool call classification
 ├── prompt.ts             ← Review prompt construction (3-part structure)
 ├── architect.ts          ← Architect prompt + shouldRunArchitectReview
-├── settings.ts           ← Config loading from .lgtm/ dirs
+├── settings.ts           ← Config loading from .hardno/ dirs
 ├── ignore.ts             ← Gitignore-style pattern matching
 ├── git-roots.ts          ← Multi-repo git root detection
 ├── helpers.ts            ← Pure utility functions
@@ -27,7 +27,7 @@ pi-lgtm/
 ├── scaffold.ts           ← Template content for /scaffold-review-files
 ├── default-review-rules.md ← Default review criteria (OWASP, SOLID, DRY, etc.)
 ├── test/                 ← 352 tests across 13 files (vitest)
-└── .lgtm/       ← Local config (settings.json, review-rules.md, etc.)
+└── .hardno/       ← Local config (settings.json, review-rules.md, etc.)
 ```
 
 ## Key commands
@@ -65,7 +65,7 @@ npm run format:check   # Prettier check
 The extension hooks into pi's lifecycle events:
 
 ```
-session_start → load config from .lgtm/ dirs
+session_start → load config from .hardno/ dirs
 tool_execution_start/end → track which files the agent modifies
 agent_end → if files changed, trigger review pipeline
 ```
@@ -95,7 +95,7 @@ index.ts (pi wiring, UI, renderOutcome)
   │     ├── reviewer.ts — runReviewSession (direct call)
   │     └── context.ts  — buildPerFileContext
   ├── message-sender.ts — sendReviewResult (formats + sends messages)
-  ├── settings.ts      — reads .lgtm/settings.json + review-rules.md
+  ├── settings.ts      — reads .hardno/settings.json + review-rules.md
   ├── git-roots.ts     — finds git repo roots from file paths
   ├── review-display.ts — animated TUI widget during review
   ├── scaffold.ts      — templates for /scaffold-review-files command
@@ -112,8 +112,8 @@ context.ts (content builder)
 
 ### Config resolution (two locations, local wins)
 
-1. `cwd/.lgtm/` — project-local config
-2. `~/.pi/.lgtm/` — global defaults
+1. `cwd/.hardno/` — project-local config
+2. `~/.pi/.hardno/` — global defaults
    All config files are optional. `settings.ts` handles loading + validation with error messages for invalid values.
 
 ### Content gathering has 4 fallback paths (context.ts)

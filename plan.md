@@ -57,7 +57,7 @@ New design topics captured during a working session; **none implemented yet**, a
 
 **Diagnostic approach:**
 
-- Add a debug mode that logs every `(tool_name, target_path, matched_file)` triple to `~/.pi/.lgtm/review.log`.
+- Add a debug mode that logs every `(tool_name, target_path, matched_file)` triple to `~/.pi/.hardno/review.log`.
 - Cross-reference against the reviewer's actual output: did the file indicator ever match the file it was critiquing?
 - If causes 1 or 3 dominate, make `activeFile` fall back to a "currently unlisted read" state (e.g. show `▸ (cross-ref) node_modules/x/y.ts`) instead of holding stale.
 
@@ -84,7 +84,7 @@ export interface ReviewPersonality {
   id: string; // "senior" | "architect" | "security" | ...
   displayName: string; // "Senior Review" (shown to user)
   systemPrompt: string; // the role/charter
-  customRulesFile?: string; // .lgtm/<id>.md (optional)
+  customRulesFile?: string; // .hardno/<id>.md (optional)
   contextStrategy: ContextStrategy; // per-file diff | full repo | last commit | ...
   verdictParser: (raw: string) => Verdict;
   outputHandler: (result, api) => void; // how to deliver to user/agent
@@ -115,8 +115,8 @@ export interface ReviewPipeline {
 - **Parallel runs**: can multiple reviewers safely share a single SDK auth context? Probably yes (each spawns its own `createAgentSession`). But rate limits matter — if we parallel-fire 4 reviewers they all hit Bedrock at once.
 - **Result aggregation for parallel**: if security + senior both fire, and security LGTMs but senior finds issues, what's the combined message to the user? Probably per-step sections in a single summary message.
 - **Cross-step context**: should a later step see earlier steps' findings? E.g. architect sees senior's output. Current code does this implicitly; needs an explicit contract.
-- **Config file shape**: a single `settings.json` with nested pipeline config? Or per-step `.lgtm/<id>.json`? Probably the latter for cleanliness.
-- **Backward compat**: users with existing `.lgtm/review-rules.md` + `.lgtm/architect.md` must see zero behavior change.
+- **Config file shape**: a single `settings.json` with nested pipeline config? Or per-step `.hardno/<id>.json`? Probably the latter for cleanliness.
+- **Backward compat**: users with existing `.hardno/review-rules.md` + `.hardno/architect.md` must see zero behavior change.
 
 **Status:** [ ] design only. Needs an architecture RFC before code.
 

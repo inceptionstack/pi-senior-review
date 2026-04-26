@@ -1,5 +1,5 @@
 /**
- * session-kind.ts — detect whether pi-lgtm is loaded into the *main* agent
+ * session-kind.ts — detect whether pi-hard-no is loaded into the *main* agent
  * session or into a spawned *sub-session* (e.g. the reviewer session created
  * by `runReviewSession` in reviewer.ts).
  *
@@ -9,7 +9,7 @@
  * `reviewer.ts` calls `createAgentSession({...})` to spawn a separate reviewer
  * pi instance; that triggers `DefaultResourceLoader.reload()` which calls
  * `loadExtensions()` which calls our factory again with a new `pi`. So
- * pi-lgtm is loaded twice per review: once in the main session, once inside
+ * pi-hard-no is loaded twice per review: once in the main session, once inside
  * each reviewer session.
  *
  * Without a guard, the reviewer-instance's `agent_end` handler fires when
@@ -66,12 +66,12 @@ const cache = new WeakMap<object, boolean>();
 /**
  * Tool names whose presence marks a session as "main" (capable of producing
  * file changes we want to auto-review). If ALL of these are missing, the
- * session is treated as a spawned sub-session and pi-lgtm no-ops.
+ * session is treated as a spawned sub-session and pi-hard-no no-ops.
  */
 const MAIN_SESSION_WRITE_TOOLS = ["write", "edit"] as const;
 
 /**
- * Returns `true` if the current pi-lgtm instance is running inside a
+ * Returns `true` if the current pi-hard-no instance is running inside a
  * spawned sub-session (e.g. a reviewer session) rather than the main agent
  * session.
  *
@@ -123,7 +123,7 @@ function probeIsSpawned(pi: ExtensionAPI): boolean {
     const isSpawned = !hasAnyWriteTool;
     if (isSpawned) {
       log(
-        `session-kind: spawned sub-session detected (tools=[${[...names].join(",")}]) — pi-lgtm hooks will no-op for this instance`,
+        `session-kind: spawned sub-session detected (tools=[${[...names].join(",")}]) — pi-hard-no hooks will no-op for this instance`,
       );
     }
     return isSpawned;

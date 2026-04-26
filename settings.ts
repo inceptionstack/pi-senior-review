@@ -1,9 +1,9 @@
 /**
  * settings.ts — Configuration loading and validation
  *
- * Loads config from .lgtm/ in two locations (local takes precedence):
- *   1. cwd/.lgtm/   (project-local)
- *   2. ~/.pi/.lgtm/ (global)
+ * Loads config from .hardno/ in two locations (local takes precedence):
+ *   1. cwd/.hardno/   (project-local)
+ *   2. ~/.pi/.hardno/ (global)
  *
  * Files: settings.json, review-rules.md
  */
@@ -14,16 +14,16 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 
 /**
- * Resolve the .lgtm config directory paths.
- * Returns [local, global] where local = cwd/.lgtm, global = ~/.pi/.lgtm.
+ * Resolve the .hardno config directory paths.
+ * Returns [local, global] where local = cwd/.hardno, global = ~/.pi/.hardno.
  * Local takes precedence over global.
  */
 export function configDirs(cwd: string, home?: string): [string, string] {
-  return [join(cwd, ".lgtm"), join(home ?? homedir(), ".pi", ".lgtm")];
+  return [join(cwd, ".hardno"), join(home ?? homedir(), ".pi", ".hardno")];
 }
 
 /**
- * Read a config file, trying local (cwd/.lgtm/) first, then global (~/.pi/.lgtm/).
+ * Read a config file, trying local (cwd/.hardno/) first, then global (~/.pi/.hardno/).
  * Returns the file content or null if not found in either location.
  */
 export async function readConfigFile(
@@ -121,7 +121,7 @@ export function parseSettings(parsed: Record<string, unknown>): {
       settings.maxReviewLoops = parsed.maxReviewLoops;
     } else {
       errors.push(
-        `[lgtm] "maxReviewLoops" must be a positive integer (got ${JSON.stringify(parsed.maxReviewLoops)}). Using default: ${DEFAULT_SETTINGS.maxReviewLoops}.`,
+        `[hard-no] "maxReviewLoops" must be a positive integer (got ${JSON.stringify(parsed.maxReviewLoops)}). Using default: ${DEFAULT_SETTINGS.maxReviewLoops}.`,
       );
     }
   }
@@ -131,7 +131,7 @@ export function parseSettings(parsed: Record<string, unknown>): {
       settings.model = parsed.model;
     } else {
       errors.push(
-        `[lgtm] "model" must be "provider/model-id" (got ${JSON.stringify(parsed.model)}). Using default: ${DEFAULT_SETTINGS.model}.`,
+        `[hard-no] "model" must be "provider/model-id" (got ${JSON.stringify(parsed.model)}). Using default: ${DEFAULT_SETTINGS.model}.`,
       );
     }
   }
@@ -144,7 +144,7 @@ export function parseSettings(parsed: Record<string, unknown>): {
       settings.thinkingLevel = parsed.thinkingLevel;
     } else {
       errors.push(
-        `[lgtm] "thinkingLevel" must be one of ${VALID_THINKING_LEVELS.join(", ")} (got ${JSON.stringify(parsed.thinkingLevel)}). Using default: ${DEFAULT_SETTINGS.thinkingLevel}.`,
+        `[hard-no] "thinkingLevel" must be one of ${VALID_THINKING_LEVELS.join(", ")} (got ${JSON.stringify(parsed.thinkingLevel)}). Using default: ${DEFAULT_SETTINGS.thinkingLevel}.`,
       );
     }
   }
@@ -154,7 +154,7 @@ export function parseSettings(parsed: Record<string, unknown>): {
       settings.architectEnabled = parsed.architectEnabled;
     } else {
       errors.push(
-        `[lgtm] "architectEnabled" must be a boolean (got ${JSON.stringify(parsed.architectEnabled)}). Using default: ${DEFAULT_SETTINGS.architectEnabled}.`,
+        `[hard-no] "architectEnabled" must be a boolean (got ${JSON.stringify(parsed.architectEnabled)}). Using default: ${DEFAULT_SETTINGS.architectEnabled}.`,
       );
     }
   }
@@ -165,7 +165,7 @@ export function parseSettings(parsed: Record<string, unknown>): {
       settings.architectEnabled = parsed.roundupEnabled;
     } else {
       errors.push(
-        `[lgtm] "roundupEnabled" must be a boolean (got ${JSON.stringify(parsed.roundupEnabled)}). Using default: ${DEFAULT_SETTINGS.architectEnabled}.`,
+        `[hard-no] "roundupEnabled" must be a boolean (got ${JSON.stringify(parsed.roundupEnabled)}). Using default: ${DEFAULT_SETTINGS.architectEnabled}.`,
       );
     }
   }
@@ -179,7 +179,7 @@ export function parseSettings(parsed: Record<string, unknown>): {
       settings.reviewTimeoutMs = parsed.reviewTimeoutMs;
     } else {
       errors.push(
-        `[lgtm] "reviewTimeoutMs" must be a positive integer (got ${JSON.stringify(parsed.reviewTimeoutMs)}). Using default: ${DEFAULT_SETTINGS.reviewTimeoutMs}.`,
+        `[hard-no] "reviewTimeoutMs" must be a positive integer (got ${JSON.stringify(parsed.reviewTimeoutMs)}). Using default: ${DEFAULT_SETTINGS.reviewTimeoutMs}.`,
       );
     }
   }
@@ -189,7 +189,7 @@ export function parseSettings(parsed: Record<string, unknown>): {
       settings.toggleShortcut = parsed.toggleShortcut.trim();
     } else {
       errors.push(
-        `[lgtm] "toggleShortcut" must be a non-empty string key id (got ${JSON.stringify(parsed.toggleShortcut)}). Using default: ${DEFAULT_SETTINGS.toggleShortcut}.`,
+        `[hard-no] "toggleShortcut" must be a non-empty string key id (got ${JSON.stringify(parsed.toggleShortcut)}). Using default: ${DEFAULT_SETTINGS.toggleShortcut}.`,
       );
     }
   }
@@ -200,7 +200,7 @@ export function parseSettings(parsed: Record<string, unknown>): {
       settings.cancelShortcut = parsed.cancelShortcut.trim();
     } else {
       errors.push(
-        `[lgtm] "cancelShortcut" must be a string key id (got ${JSON.stringify(parsed.cancelShortcut)}). Using default: ${DEFAULT_SETTINGS.cancelShortcut}.`,
+        `[hard-no] "cancelShortcut" must be a string key id (got ${JSON.stringify(parsed.cancelShortcut)}). Using default: ${DEFAULT_SETTINGS.cancelShortcut}.`,
       );
     }
   }
@@ -210,7 +210,7 @@ export function parseSettings(parsed: Record<string, unknown>): {
       settings.judgeEnabled = parsed.judgeEnabled;
     } else {
       errors.push(
-        `[lgtm] "judgeEnabled" must be a boolean (got ${JSON.stringify(parsed.judgeEnabled)}). Using default: ${DEFAULT_SETTINGS.judgeEnabled}.`,
+        `[hard-no] "judgeEnabled" must be a boolean (got ${JSON.stringify(parsed.judgeEnabled)}). Using default: ${DEFAULT_SETTINGS.judgeEnabled}.`,
       );
     }
   }
@@ -220,7 +220,7 @@ export function parseSettings(parsed: Record<string, unknown>): {
       settings.judgeModel = parsed.judgeModel;
     } else {
       errors.push(
-        `[lgtm] "judgeModel" must be "provider/model-id" (got ${JSON.stringify(parsed.judgeModel)}). Using default: ${DEFAULT_SETTINGS.judgeModel}.`,
+        `[hard-no] "judgeModel" must be "provider/model-id" (got ${JSON.stringify(parsed.judgeModel)}). Using default: ${DEFAULT_SETTINGS.judgeModel}.`,
       );
     }
   }
@@ -234,7 +234,7 @@ export function parseSettings(parsed: Record<string, unknown>): {
       settings.judgeTimeoutMs = parsed.judgeTimeoutMs;
     } else {
       errors.push(
-        `[lgtm] "judgeTimeoutMs" must be a positive integer (got ${JSON.stringify(parsed.judgeTimeoutMs)}). Using default: ${DEFAULT_SETTINGS.judgeTimeoutMs}.`,
+        `[hard-no] "judgeTimeoutMs" must be a positive integer (got ${JSON.stringify(parsed.judgeTimeoutMs)}). Using default: ${DEFAULT_SETTINGS.judgeTimeoutMs}.`,
       );
     }
   }
@@ -245,7 +245,7 @@ export function parseSettings(parsed: Record<string, unknown>): {
   for (const key of Object.keys(parsed)) {
     if (!knownKeys.has(key)) {
       errors.push(
-        `[lgtm] Unknown setting "${key}" (ignored). Known: ${[...knownKeys].join(", ")}.`,
+        `[hard-no] Unknown setting "${key}" (ignored). Known: ${[...knownKeys].join(", ")}.`,
       );
     }
   }
@@ -256,8 +256,8 @@ export function parseSettings(parsed: Record<string, unknown>): {
 // ── File loaders ─────────────────────────────────────
 
 /**
- * Load and validate .lgtm/settings.json.
- * Tries cwd/.lgtm/ first, then ~/.pi/.lgtm/.
+ * Load and validate .hardno/settings.json.
+ * Tries cwd/.hardno/ first, then ~/.pi/.hardno/.
  */
 export async function loadSettings(
   cwd: string,
@@ -271,12 +271,12 @@ export async function loadSettings(
   try {
     parsed = JSON.parse(raw);
   } catch (e: any) {
-    errors.push(`[lgtm] .lgtm/settings.json is not valid JSON: ${e.message}. Using defaults.`);
+    errors.push(`[hard-no] .hardno/settings.json is not valid JSON: ${e.message}. Using defaults.`);
     return { settings: { ...DEFAULT_SETTINGS }, errors };
   }
 
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    errors.push(`[lgtm] .lgtm/settings.json must be a JSON object. Using defaults.`);
+    errors.push(`[hard-no] .hardno/settings.json must be a JSON object. Using defaults.`);
     return { settings: { ...DEFAULT_SETTINGS }, errors };
   }
 
@@ -285,8 +285,8 @@ export async function loadSettings(
 }
 
 /**
- * Synchronously load shortcut settings from .lgtm/settings.json.
- * Tries cwd/.lgtm/ first, then ~/.pi/.lgtm/.
+ * Synchronously load shortcut settings from .hardno/settings.json.
+ * Tries cwd/.hardno/ first, then ~/.pi/.hardno/.
  * Used at extension init time (before session_start) for shortcut registration.
  * Falls back to defaults on any error — never throws.
  */
@@ -313,8 +313,8 @@ export function loadShortcutSettingsSync(cwd: string): ShortcutSettings {
 }
 
 /**
- * Load .lgtm/review-rules.md custom review rules.
- * Tries cwd/.lgtm/ first, then ~/.pi/.lgtm/.
+ * Load .hardno/review-rules.md custom review rules.
+ * Tries cwd/.hardno/ first, then ~/.pi/.hardno/.
  */
 export async function loadReviewRules(cwd: string): Promise<string | null> {
   const content = await readConfigFile(cwd, "review-rules.md");
@@ -322,9 +322,9 @@ export async function loadReviewRules(cwd: string): Promise<string | null> {
 }
 
 /**
- * Load .lgtm/auto-review.md — overrides the "what to review / what not to report"
+ * Load .hardno/auto-review.md — overrides the "what to review / what not to report"
  * section of the review prompt. Returns null if not found (uses built-in defaults).
- * Tries cwd/.lgtm/ first, then ~/.pi/.lgtm/.
+ * Tries cwd/.hardno/ first, then ~/.pi/.hardno/.
  */
 export async function loadAutoReviewRules(cwd: string): Promise<string | null> {
   const content = await readConfigFile(cwd, "auto-review.md");

@@ -1,6 +1,6 @@
 # Judge Scenarios — Manual Test Plan
 
-A runbook for verifying the pi-lgtm duplicate-review suppressor ("judge") end-to-end from a live pi session. Each scenario is a single agent turn whose observable outcome (chat message + `~/.pi/.lgtm/review.log` entries) unambiguously confirms or denies a specific code path.
+A runbook for verifying the pi-hard-no duplicate-review suppressor ("judge") end-to-end from a live pi session. Each scenario is a single agent turn whose observable outcome (chat message + `~/.pi/.hardno/review.log` entries) unambiguously confirms or denies a specific code path.
 
 Complements the automated test suite (`test/judge.test.ts`, `test/judge-skip-chain.test.ts`, `test/orchestrator.test.ts > judge gate`) by covering the live wiring that unit tests can't reach: the pi SDK, the actual reviewer subprocess, the chat-message rendering, the status-bar updates, and the cross-session interactions that exposed the stale-ctx bug fixed in commit `52e5289`.
 
@@ -17,8 +17,8 @@ Complements the automated test suite (`test/judge.test.ts`, `test/judge-skip-cha
 
 ## Preconditions
 
-- Live pi interactive session with pi-lgtm loaded
-- Settings start at defaults (`judgeEnabled: false`, no `.lgtm/settings.json` overrides)
+- Live pi interactive session with pi-hard-no loaded
+- Settings start at defaults (`judgeEnabled: false`, no `.hardno/settings.json` overrides)
 - Working directory = this extension root (or any git repo; only Scenario 4 uses `/tmp/`)
 - Optional: `/review-clean-logs` to get a clean log for diffing before/after
 
@@ -94,7 +94,7 @@ echo "probe 3" && date > /tmp/lgtm-judge-test.txt && cat /tmp/lgtm-judge-test.tx
 - 📝 Log for this review cycle: NO `judge:` line at all
 - ✅ Full review runs (~5–10s) via the tool-call fallback path in `context.ts` (the file is outside any git repo, so git-diff paths fall through)
 
-**Pass signal:** a `✅ Automated Code Review …` chat message appears, and `grep '^\[.*\] judge:' ~/.pi/.lgtm/review.log` shows NO new entries for this review's `review-id`.
+**Pass signal:** a `✅ Automated Code Review …` chat message appears, and `grep '^\[.*\] judge:' ~/.pi/.hardno/review.log` shows NO new entries for this review's `review-id`.
 
 ## Scenario 5 — Post-`/reload` sub-session guard
 
@@ -107,11 +107,11 @@ Regression test for the stale-ctx + recursive-review bug fixed in `52e5289`.
 
 **Trigger:** repeat Scenario 4 (write tool to `/tmp/`).
 
-**Why this specifically tests the fix:** The main session's `agent_end` starts a reviewer session via `runReviewSession` → `createAgentSession({...})`. pi's extension loader re-executes the pi-lgtm factory for the reviewer session, creating a fresh instance. When the reviewer completes its one-shot prompt, the reviewer session emits `agent_end` internally. The reviewer-instance's `agent_end` handler must detect it's running in a spawned sub-session and no-op.
+**Why this specifically tests the fix:** The main session's `agent_end` starts a reviewer session via `runReviewSession` → `createAgentSession({...})`. pi's extension loader re-executes the pi-hard-no factory for the reviewer session, creating a fresh instance. When the reviewer completes its one-shot prompt, the reviewer session emits `agent_end` internally. The reviewer-instance's `agent_end` handler must detect it's running in a spawned sub-session and no-op.
 
 **Expected log:**
 
-- ✅ One `session-kind: spawned sub-session detected (tools=[read,bash,grep,find,ls]) — pi-lgtm hooks will no-op for this instance` line per review cycle (cached per-`pi`, so one per spawned session, not one per event)
+- ✅ One `session-kind: spawned sub-session detected (tools=[read,bash,grep,find,ls]) — pi-hard-no hooks will no-op for this instance` line per review cycle (cached per-`pi`, so one per spawned session, not one per event)
 - ❌ Zero `ERROR: Review failed (outer): This extension ctx is stale after session replacement or reload …` lines
 
 **Fail signal (the original bug):** any `ctx is stale` line in the log. If present, the sub-session guard isn't firing.
@@ -140,16 +140,16 @@ Useful `grep`s during/after a test run:
 
 ```bash
 # Every judge classification this session
-grep '^\[.*\] judge:' ~/.pi/.lgtm/review.log
+grep '^\[.*\] judge:' ~/.pi/.hardno/review.log
 
 # Stale-ctx errors — MUST be empty after 52e5289
-grep 'ctx is stale' ~/.pi/.lgtm/review.log
+grep 'ctx is stale' ~/.pi/.hardno/review.log
 
 # Sub-session guard firings — should appear once per reviewer session
-grep 'session-kind:' ~/.pi/.lgtm/review.log
+grep 'session-kind:' ~/.pi/.hardno/review.log
 
 # Full trace for one review cycle (replace review-id)
-grep 'r-<id>' ~/.pi/.lgtm/review.log
+grep 'r-<id>' ~/.pi/.hardno/review.log
 ```
 
 ## Known-good output examples

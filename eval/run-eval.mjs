@@ -1,4 +1,4 @@
-// eval/run-eval.mjs — one-shot eval harness, run from pi-lgtm root via
+// eval/run-eval.mjs — one-shot eval harness, run from pi-hard-no root via
 //   node --experimental-strip-types --no-warnings eval/run-eval.mjs
 // Writes JSONL to eval/results/ and prints a markdown summary.
 

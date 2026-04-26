@@ -1,17 +1,17 @@
-# pi-lgtm
+# pi-hard-no
 
 A [pi](https://github.com/badlogic/pi-mono) extension that automatically reviews code changes after each agent turn using a separate pi reviewer instance.
 
 ## Install
 
 ```bash
-pi install npm:@inceptionstack/pi-lgtm
+pi install npm:@inceptionstack/pi-hard-no
 ```
 
 Or manually:
 
 ```bash
-cp index.ts ~/.pi/agent/extensions/pi-lgtm.ts
+cp index.ts ~/.pi/agent/extensions/pi-hard-no.ts
 ```
 
 ## How it works
@@ -58,14 +58,14 @@ The reviewer checks for:
 
 Config files are loaded from two locations. **Local takes precedence over global:**
 
-1. `cwd/.lgtm/` — project-specific config
-2. `~/.pi/.lgtm/` — global defaults
+1. `cwd/.hardno/` — project-specific config
+2. `~/.pi/.hardno/` — global defaults
 
 All config files are optional. If missing, sensible defaults are used.
 
 Use `/scaffold-review-files` to generate config templates.
 
-### `.lgtm/settings.json`
+### `.hardno/settings.json`
 
 ```json
 {
@@ -97,7 +97,7 @@ Use `/scaffold-review-files` to generate config templates.
 
 > **Note:** `roundupEnabled` is accepted as a legacy alias for `architectEnabled`.
 
-### `.lgtm/review-rules.md`
+### `.hardno/review-rules.md`
 
 Custom review rules appended to the reviewer prompt. Only include review criteria — the surrounding prompt (tools, budget, workflow, response format) is handled automatically.
 
@@ -113,13 +113,13 @@ Custom review rules appended to the reviewer prompt. Only include review criteri
 - No secrets in code — use environment variables
 ```
 
-Use `/add-review-rule <text>` to quickly prepend rules, or `/lgtm-rules` to open the file in pi's editor.
+Use `/add-review-rule <text>` to quickly prepend rules, or `/hardno-rules` to open the file in pi's editor.
 
-### `.lgtm/auto-review.md`
+### `.hardno/auto-review.md`
 
 Override the "what to review / what not to report" section of the review prompt. The surrounding prompt (tools, budget, workflow, response format) is always included automatically.
 
-### `.lgtm/architect.md`
+### `.hardno/architect.md`
 
 Custom rules for the architect review (cross-file consistency check):
 
@@ -131,9 +131,9 @@ Custom rules for the architect review (cross-file consistency check):
 - Flag any TODO/FIXME comments added during fix loops
 ```
 
-> **Note:** `.lgtm/roundup.md` is accepted as a legacy fallback.
+> **Note:** `.hardno/roundup.md` is accepted as a legacy fallback.
 
-### `.lgtm/ignore`
+### `.hardno/ignore`
 
 Gitignore-style patterns to exclude files from review:
 
@@ -168,17 +168,17 @@ During reviews, an animated widget appears below the editor showing:
 
 ### Commands
 
-| Command                   | Description                                                         |
-| ------------------------- | ------------------------------------------------------------------- |
-| `/review`                 | Toggle review on/off                                                |
-| `/review N`               | Review the last N commits                                           |
-| `/review-all`             | Review all changes (pending diff → last commit → all files in cwd)  |
-| `/cancel-review`          | Cancel an in-progress review (works during architect review)        |
-| `/review-judge-toggle`    | Toggle the duplicate-review suppressor (judge) for this session     |
-| `/review-clean-logs`      | Wipe `~/.pi/.lgtm/review.log` + `reviews/*.json` (config untouched) |
-| `/scaffold-review-files`  | Create `.lgtm/` config templates in a git repo                      |
-| `/lgtm-rules`             | Edit `.lgtm/review-rules.md` in pi's built-in editor                |
-| `/add-review-rule <text>` | Prepend a custom rule to `.lgtm/review-rules.md`                    |
+| Command                   | Description                                                           |
+| ------------------------- | --------------------------------------------------------------------- |
+| `/review`                 | Toggle review on/off                                                  |
+| `/review N`               | Review the last N commits                                             |
+| `/review-all`             | Review all changes (pending diff → last commit → all files in cwd)    |
+| `/cancel-review`          | Cancel an in-progress review (works during architect review)          |
+| `/review-judge-toggle`    | Toggle the duplicate-review suppressor (judge) for this session       |
+| `/review-clean-logs`      | Wipe `~/.pi/.hardno/review.log` + `reviews/*.json` (config untouched) |
+| `/scaffold-review-files`  | Create `.hardno/` config templates in a git repo                      |
+| `/hardno-rules`           | Edit `.hardno/review-rules.md` in pi's built-in editor                |
+| `/add-review-rule <text>` | Prepend a custom rule to `.hardno/review-rules.md`                    |
 
 ### Keyboard shortcuts
 
@@ -227,7 +227,7 @@ The **judge** is an opt-in duplicate-review suppressor. When enabled, it runs a 
 - Any `write`/`edit` tool call skips the judge entirely and goes straight to review.
 - A kill switch: set `"judgeEnabled": false` to disable instantly.
 
-**Enable in `.lgtm/settings.json`:**
+**Enable in `.hardno/settings.json`:**
 
 ```json
 {

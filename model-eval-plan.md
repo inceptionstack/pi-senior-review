@@ -1,4 +1,4 @@
-# Bash Classifier Model Eval Plan v2 - pi-lgtm
+# Bash Classifier Model Eval Plan v2 - pi-hard-no
 
 ## Goal
 

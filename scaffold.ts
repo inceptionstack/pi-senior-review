@@ -34,7 +34,7 @@ try {
   _scaffoldReviewRules = readFileSync(join(__dirname, "default-review-rules.md"), "utf8");
 } catch (err: any) {
   console.error(
-    `[lgtm] Failed to read default-review-rules.md: ${err?.message ?? err}. ` +
+    `[hard-no] Failed to read default-review-rules.md: ${err?.message ?? err}. ` +
       `Scaffold will create an empty review-rules.md. ` +
       `Expected at: ${join(__dirname, "default-review-rules.md")}`,
   );

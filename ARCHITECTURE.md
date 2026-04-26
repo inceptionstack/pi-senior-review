@@ -1,8 +1,8 @@
-# ARCHITECTURE.md — pi-lgtm
+# ARCHITECTURE.md — pi-hard-no
 
 ## System overview
 
-pi-lgtm is a pi extension that provides automated code review after every agent turn that modifies files. It works by spawning an isolated, read-only pi reviewer instance that examines changes and feeds findings back to the main agent.
+pi-hard-no is a pi extension that provides automated code review after every agent turn that modifies files. It works by spawning an isolated, read-only pi reviewer instance that examines changes and feeds findings back to the main agent.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -12,7 +12,7 @@ pi-lgtm is a pi extension that provides automated code review after every agent 
 │                                          │              │
 │                                          ▼              │
 │  ┌─────────────────────────────────────────────┐        │
-│  │         pi-lgtm extension          │        │
+│  │         pi-hard-no extension          │        │
 │  │                                             │        │
 │  │  1. Detect changed files (changes.ts)       │        │
 │  │  2. Build review content (context.ts)       │        │
@@ -141,7 +141,7 @@ The review prompt has a fixed 3-part structure:
 │     correctness, security, data loss     │
 │   - What NOT to report:                  │
 │     style, missing tests, refactors      │
-│   Override: .lgtm/auto-review.md│
+│   Override: .hardno/auto-review.md│
 ├──────────────────────────────────────────┤
 │ PROMPT_SUFFIX (always included)          │
 │   - Response format: bullet list         │
@@ -150,7 +150,7 @@ The review prompt has a fixed 3-part structure:
 │     or <verdict>ISSUES_FOUND</verdict>   │
 ├──────────────────────────────────────────┤
 │ Custom rules (appended if present)       │
-│   From: .lgtm/review-rules.md   │
+│   From: .hardno/review-rules.md   │
 ├──────────────────────────────────────────┤
 │ User request context (appended)          │
 │   The last user message that triggered   │
@@ -248,8 +248,8 @@ agent modifies files
 
 ```
 Config resolution order (local wins):
-  1. cwd/.lgtm/settings.json      ← project-local
-  2. ~/.pi/.lgtm/settings.json    ← global
+  1. cwd/.hardno/settings.json      ← project-local
+  2. ~/.pi/.hardno/settings.json    ← global
 
 Config files:
   settings.json      ← JSON: model, maxLoops, shortcuts, timeouts
@@ -320,7 +320,7 @@ In architect mode, the ASCII art changes to "ARCHITCT" and an architecture diagr
 
 ## Logging (logger.ts)
 
-Two output channels under `~/.pi/.lgtm/`:
+Two output channels under `~/.pi/.hardno/`:
 
 | Output           | Format                     | Purpose                                                                              |
 | ---------------- | -------------------------- | ------------------------------------------------------------------------------------ |

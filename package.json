@@ -1,12 +1,15 @@
 {
-  "name": "@inceptionstack/pi-lgtm",
-  "version": "0.2.1",
+  "name": "@inceptionstack/pi-hard-no",
+  "version": "1.0.0",
   "type": "module",
   "description": "Pi extension — automatic code review after every agent turn",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/inceptionstack/pi-lgtm.git"
+    "url": "https://github.com/inceptionstack/pi-hard-no.git"
   },
   "keywords": [
     "pi",

@@ -4,7 +4,7 @@
  * The review prompt has three parts:
  *   1. PROMPT_PREFIX  — system preamble (tools, budget, workflow)
  *   2. Auto-review rules — what to review / what not to report
- *      (default: DEFAULT_AUTO_REVIEW_RULES, overridable via .lgtm/auto-review.md)
+ *      (default: DEFAULT_AUTO_REVIEW_RULES, overridable via .hardno/auto-review.md)
  *   3. PROMPT_SUFFIX  — response format, examples, verdict instructions
  *
  * The user can override ONLY part 2 via auto-review.md.
@@ -105,8 +105,8 @@ export const DEFAULT_REVIEW_PROMPT = `${PROMPT_PREFIX}\n\n${DEFAULT_AUTO_REVIEW_
 /**
  * Build the full review prompt.
  *
- * @param autoReviewRules — contents of .lgtm/auto-review.md, or null to use defaults
- * @param customRules     — contents of .lgtm/review-rules.md (appended at the end)
+ * @param autoReviewRules — contents of .hardno/auto-review.md, or null to use defaults
+ * @param customRules     — contents of .hardno/review-rules.md (appended at the end)
  * @param userRequest     — the last user message that triggered the agent (what the user asked)
  */
 export function buildReviewPrompt(

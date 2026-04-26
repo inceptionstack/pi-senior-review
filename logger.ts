@@ -1,7 +1,7 @@
 /**
- * logger.ts — File logger for pi-lgtm
+ * logger.ts — File logger for pi-hard-no
  *
- * Two outputs under ~/.pi/.lgtm/:
+ * Two outputs under ~/.pi/.hardno/:
  *   review.log       — free-text timestamped lines (rotates at 1MB)
  *   reviews/*.json   — one structured JSON file per completed review
  *
@@ -21,7 +21,7 @@ import {
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-const LOG_DIR = join(homedir(), ".pi", ".lgtm");
+const LOG_DIR = join(homedir(), ".pi", ".hardno");
 const LOG_FILE = join(LOG_DIR, "review.log");
 const LOG_OLD = join(LOG_DIR, "review.log.old");
 const REVIEWS_DIR = join(LOG_DIR, "reviews");
@@ -112,7 +112,7 @@ export interface ReviewLogEntry {
 
 /**
  * Write a structured JSON record for a single review.
- * Filename: <timestamp>_<lgtm|issues>[_<reviewId>].json
+ * Filename: <timestamp>_<hardno|issues>[_<reviewId>].json
  * The reviewId suffix is appended when provided so logs from the same
  * review cycle can be correlated across review.log and reviews/*.json.
  */
@@ -132,11 +132,11 @@ export function logReview(entry: ReviewLogEntry): string | null {
 }
 
 /**
- * Remove all pi-lgtm log/review history files.
+ * Remove all pi-hard-no log/review history files.
  * Wipes `review.log`, the rotated `review.log.old`, and every
  * `reviews/*.json` structured record. Does NOT touch user config
  * (settings.json, review-rules.md, etc.) — only the append-only
- * history pi-lgtm owns.
+ * history pi-hard-no owns.
  *
  * Returns a summary of what was removed.
  */

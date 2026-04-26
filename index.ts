@@ -1,24 +1,24 @@
 /**
- * pi-lgtm — Pi extension
+ * pi-hard-no — Pi extension
  *
  * After each agent turn that modifies files, spawns a fresh pi instance
  * to do a code review. Feeds the review feedback back to the main agent
  * as a steering message so it can decide whether to fix anything.
  *
- * Configuration (optional, in cwd/.lgtm/ or ~/.pi/.lgtm/, local takes precedence):
+ * Configuration (optional, in cwd/.hardno/ or ~/.pi/.hardno/, local takes precedence):
  *   settings.json       — { "maxReviewLoops": 100, "toggleShortcut": "alt+r", "cancelShortcut": "alt+x" }
  *   review-rules.md     — custom review rules appended to prompt
  *
  * UX:
- *   - Status bar shows lgtm on/off + pending file count
+ *   - Status bar shows hard-no on/off + pending file count
  *   - Alt+R toggles review on/off (configurable: toggleShortcut)
  *   - Alt+X or /cancel-review cancels an in-progress review (cancelShortcut configurable, default: none)
  *   - Ctrl+Alt+R also cancels (terminals that support it)
  *   - /review command toggles, /review <N> reviews last N commits
  *
  * Install:
- *   pi install npm:@inceptionstack/pi-lgtm
- *   or: cp index.ts ~/.pi/agent/extensions/pi-lgtm.ts
+ *   pi install npm:@inceptionstack/pi-hard-no
+ *   or: cp index.ts ~/.pi/agent/extensions/pi-hard-no.ts
  */
 
 import { type ExtensionAPI, isToolCallEventType } from "@mariozechner/pi-coding-agent";
@@ -194,7 +194,7 @@ export default function (pi: ExtensionAPI) {
     const ui = safeGetUi(ctx);
     if (!ui) return;
     const theme = ui.theme;
-    const label = theme.fg("accent", "lgtm");
+    const label = theme.fg("accent", "hard-no");
     const state = orchestrator.isEnabled ? theme.fg("success", "on") : theme.fg("dim", "off");
 
     // Determine if push is currently blocked
@@ -515,7 +515,7 @@ export default function (pi: ExtensionAPI) {
         const ui = safeGetUi(ctx);
         if (ui && outcome.reason !== "disabled") {
           const theme = ui.theme;
-          const label = theme.fg("accent", "lgtm");
+          const label = theme.fg("accent", "hard-no");
           const reason =
             outcome.reason === "no_file_changes" || outcome.reason === "no_real_files"
               ? "no file changes"
@@ -603,7 +603,7 @@ export default function (pi: ExtensionAPI) {
         pi.sendMessage(
           {
             customType: "code-review",
-            content: `⚠️ **Review failed**\n\n${errMsg}\n\nThe review could not complete. Check the logs in ~/.pi/.lgtm/review.log for details. If this is a timeout, consider increasing reviewTimeoutMs in .lgtm/settings.json.`,
+            content: `⚠️ **Review failed**\n\n${errMsg}\n\nThe review could not complete. Check the logs in ~/.pi/.hardno/review.log for details. If this is a timeout, consider increasing reviewTimeoutMs in .hardno/settings.json.`,
             display: true,
           },
           { triggerTurn: false, deliverAs: "followUp" },
@@ -671,7 +671,7 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.on("agent_end", async (event, ctx) => {
-    // First guard: if pi-lgtm is loaded into a spawned sub-session (e.g. the
+    // First guard: if pi-hard-no is loaded into a spawned sub-session (e.g. the
     // reviewer session created by runReviewSession), do nothing. Without
     // this, our handler recursively triggers a review inside the reviewer
     // session, then crashes with "ctx is stale" once reviewer.ts disposes
@@ -778,7 +778,7 @@ export default function (pi: ExtensionAPI) {
   // In-memory toggle for the duplicate-review suppressor. Does NOT persist
   // to settings.json — matches the pattern of /review (Alt+R) which is also
   // a session-level toggle. To make the change permanent, the user edits
-  // `.lgtm/settings.json` themselves.
+  // `.hardno/settings.json` themselves.
   pi.registerCommand("review-judge-toggle", {
     description: "Toggle the duplicate-review suppressor (judge) for this session",
     handler: async (_args, ctx) => {
@@ -805,12 +805,13 @@ export default function (pi: ExtensionAPI) {
 
   // ── /review-clean-logs command ──────────────
   //
-  // Wipes ~/.pi/.lgtm/review.log (+ .old) and every structured reviews/*.json.
+  // Wipes ~/.pi/.hardno/review.log (+ .old) and every structured reviews/*.json.
   // Does NOT touch user config (settings.json, review-rules.md, etc.) — only
-  // the append-only history pi-lgtm owns. Useful when testing changes to the
+  // the append-only history pi-hard-no owns. Useful when testing changes to the
   // review pipeline without noise from prior runs.
   pi.registerCommand("review-clean-logs", {
-    description: "Wipe pi-lgtm review logs (review.log + reviews/*.json); leaves config untouched",
+    description:
+      "Wipe pi-hard-no review logs (review.log + reviews/*.json); leaves config untouched",
     handler: async (_args, ctx) => {
       const { logsRemoved, reviewsRemoved } = cleanLogs();
       const summary = `Cleared ${logsRemoved} log file${logsRemoved === 1 ? "" : "s"} and ${reviewsRemoved} review record${reviewsRemoved === 1 ? "" : "s"}`;
@@ -856,10 +857,11 @@ export default function (pi: ExtensionAPI) {
     architectRules = rRules;
     settings = settingsResult.settings;
 
-    if (autoReviewRules) log("Loaded auto-review rules from .lgtm/auto-review.md");
-    if (customRules) log("Loaded custom rules from .lgtm/review-rules.md");
-    if (architectRules) log("Loaded architect rules from .lgtm/architect.md");
-    if (ignorePatterns) log(`Loaded ${ignorePatterns.length} ignore pattern(s) from .lgtm/ignore`);
+    if (autoReviewRules) log("Loaded auto-review rules from .hardno/auto-review.md");
+    if (customRules) log("Loaded custom rules from .hardno/review-rules.md");
+    if (architectRules) log("Loaded architect rules from .hardno/architect.md");
+    if (ignorePatterns)
+      log(`Loaded ${ignorePatterns.length} ignore pattern(s) from .hardno/ignore`);
     for (const err of settingsResult.errors) {
       log(err);
       if (ctx.hasUI) ctx.ui.notify(err, "warning");

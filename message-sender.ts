@@ -55,7 +55,7 @@ export function sendReviewResult(
       : "";
   // Footer line with the review id, placed under the reviewed-files block (or under the header when no files).
   // Format: `_review-id: r-abcdef01_` — small/italic, unobtrusive, but visible if scanning.
-  // The agent sees this literally in the message content so logs in ~/.pi/.lgtm can be correlated.
+  // The agent sees this literally in the message content so logs in ~/.pi/.hardno can be correlated.
   const idFooter = formatReviewIdFooter(opts?.reviewId);
 
   if (result.isLgtm) {

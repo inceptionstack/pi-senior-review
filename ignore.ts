@@ -1,5 +1,5 @@
 /**
- * ignore.ts — .lgtm/ignore pattern matching
+ * ignore.ts — .hardno/ignore pattern matching
  *
  * Uses gitignore-style patterns:
  *   - Blank lines and lines starting with # are ignored
@@ -18,7 +18,7 @@ import { readConfigFile } from "./settings";
 
 /**
  * Parse an ignore file into a list of patterns.
- * Tries cwd/.lgtm/ first, then ~/.pi/.lgtm/.
+ * Tries cwd/.hardno/ first, then ~/.pi/.hardno/.
  */
 export async function loadIgnorePatterns(cwd: string): Promise<string[] | null> {
   try {
@@ -26,7 +26,7 @@ export async function loadIgnorePatterns(cwd: string): Promise<string[] | null> 
     if (content === null) return null;
     return parseIgnoreFile(content);
   } catch (err: any) {
-    log(`Warning: could not read .lgtm/ignore: ${err?.message}`);
+    log(`Warning: could not read .hardno/ignore: ${err?.message}`);
     return null;
   }
 }

@@ -456,7 +456,7 @@ export async function getContentFromLastCommit(
     ).stdout.trim();
     let files = await listDiffFiles(pi, ".", "HEAD~1", "HEAD");
 
-    // Apply ignore patterns so the last-commit fallback respects .lgtm/ignore
+    // Apply ignore patterns so the last-commit fallback respects .hardno/ignore
     if (ignorePatterns && ignorePatterns.length > 0) {
       files = filterIgnored(files, ignorePatterns);
     }

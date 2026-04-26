@@ -184,12 +184,12 @@ During reviews, an animated widget appears below the editor showing:
 
 ### Keyboard shortcuts
 
-| Key                 | Default  | Configurable     | Action                                              |
-| ------------------- | -------- | ---------------- | --------------------------------------------------- |
-| Toggle shortcut     | `alt+r`  | `toggleShortcut` | Toggle review on/off                                |
-| Cancel shortcut     | _(none)_ | `cancelShortcut` | Cancel in-progress review                           |
-| `ctrl+alt+r`        | built-in | no               | Cancel review (fallback, terminals that support it) |
-| `ctrl+alt+shift+r`  | built-in | no               | Full reset: cancel, reset loops, clear all state    |
+| Key                | Default  | Configurable     | Action                                              |
+| ------------------ | -------- | ---------------- | --------------------------------------------------- |
+| Toggle shortcut    | `alt+r`  | `toggleShortcut` | Toggle review on/off                                |
+| Cancel shortcut    | _(none)_ | `cancelShortcut` | Cancel in-progress review                           |
+| `ctrl+alt+r`       | built-in | no               | Cancel review (fallback, terminals that support it) |
+| `ctrl+alt+shift+r` | built-in | no               | Full reset: cancel, reset loops, clear all state    |
 
 > **Note:** `/cancel-review` is the recommended cancel method. It works in all terminals. Keyboard shortcuts for cancel are opt-in via `cancelShortcut` in settings because many terminals (especially iTerm2 on macOS) don't reliably send modifier key combos.
 

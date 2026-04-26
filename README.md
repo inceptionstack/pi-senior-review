@@ -1,6 +1,8 @@
 # pi-hard-no
 
-A [pi](https://github.com/badlogic/pi-mono) extension that automatically reviews code changes after each agent turn using a separate pi reviewer instance.
+Gives your AI agent a hard no. Every. Single. Time. Until the code is right.
+
+A [pi](https://github.com/badlogic/pi-mono) extension that automatically reviews code changes after each agent turn using a separate reviewer instance. If the reviewer isn't happy, the agent goes back and fixes it — looping continuously until the review says **LGTM**. Push is blocked until the reviewer approves, so nothing lands remote without passing review. No manual triggering needed — it all happens automatically. Fully customizable: swap models, write your own review rules, tune loop limits, gate with a judge, and more.
 
 ## Install
 
@@ -30,12 +32,12 @@ Agent makes file changes (write, edit, bash)
          │
     ┌────┴────┐
     │         │
-  LGTM    Issues found
+  LGTM    Hard no
     │         │
     │         ▼
-    │      Feeds back to main agent
-    │      Agent fixes → new review loop
-    │       (up to maxReviewLoops)
+    │      Feeds issues back to the agent
+    │      Agent fixes → reviewer loops again
+    │       (up to maxReviewLoops — default 100)
     │
     ▼ >1 file reviewed from git?
     │
@@ -84,7 +86,7 @@ Use `/scaffold-review-files` to generate config templates.
 
 | Setting            | Type        | Default                                                        | Description                                                                                |
 | ------------------ | ----------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `maxReviewLoops`   | integer > 0 | `100`                                                          | Max review→fix→review cycles before stopping                                               |
+| `maxReviewLoops`   | integer > 0 | `100`                                                          | Max review→fix→review cycles before giving up                                              |
 | `model`            | string      | `"amazon-bedrock/us.anthropic.claude-opus-4-6-v1"`             | Reviewer model (`"provider/model-id"`)                                                     |
 | `thinkingLevel`    | string      | `"off"`                                                        | `off\|minimal\|low\|medium\|high\|xhigh`                                                   |
 | `architectEnabled` | boolean     | `true`                                                         | Enable architect review (triggers when >1 file reviewed from git)                          |
@@ -151,12 +153,12 @@ src/vendor/**
 
 ### Status bar (bottom of pi)
 
-- `lgtm on (Alt+R toggle)` — idle, no pending files
-- `lgtm on 🔒 push blocked · will review 3 files (Alt+R toggle)` — edits accumulating, push blocked
-- `lgtm reviewing… 🔒 push blocked (/cancel-review)` — reviewer running
-- `lgtm on issues found 🔒 push blocked (Alt+R toggle)` — review found issues
-- `lgtm skipped — no files to review` — nothing to review after fix turn
-- `lgtm off (Alt+R toggle)` — disabled, push guard off
+- `hard-no on (Alt+R toggle)` — idle, no pending files
+- `hard-no on 🔒 push blocked · will review 3 files (Alt+R toggle)` — edits accumulating, push blocked
+- `hard-no reviewing… 🔒 push blocked (/cancel-review)` — reviewer running
+- `hard-no on issues found 🔒 push blocked (Alt+R toggle)` — review found issues, agent looping to fix
+- `hard-no skipped — no files to review` — nothing to review after fix turn
+- `hard-no off (Alt+R toggle)` — disabled, push guard off
 
 ### Review progress widget
 
@@ -182,22 +184,24 @@ During reviews, an animated widget appears below the editor showing:
 
 ### Keyboard shortcuts
 
-| Key                | Default  | Configurable     | Action                                              |
-| ------------------ | -------- | ---------------- | --------------------------------------------------- |
-| Toggle shortcut    | `alt+r`  | `toggleShortcut` | Toggle review on/off                                |
-| Cancel shortcut    | _(none)_ | `cancelShortcut` | Cancel in-progress review                           |
-| `ctrl+alt+r`       | built-in | no               | Cancel review (fallback, terminals that support it) |
-| `ctrl+alt+shift+r` | built-in | no               | Full reset: cancel, reset loops, clear all state    |
+| Key                 | Default  | Configurable     | Action                                              |
+| ------------------- | -------- | ---------------- | --------------------------------------------------- |
+| Toggle shortcut     | `alt+r`  | `toggleShortcut` | Toggle review on/off                                |
+| Cancel shortcut     | _(none)_ | `cancelShortcut` | Cancel in-progress review                           |
+| `ctrl+alt+r`        | built-in | no               | Cancel review (fallback, terminals that support it) |
+| `ctrl+alt+shift+r`  | built-in | no               | Full reset: cancel, reset loops, clear all state    |
 
 > **Note:** `/cancel-review` is the recommended cancel method. It works in all terminals. Keyboard shortcuts for cancel are opt-in via `cancelShortcut` in settings because many terminals (especially iTerm2 on macOS) don't reliably send modifier key combos.
 
-## Review loop behavior
+## The loop
 
 1. Agent makes changes → review triggers
-2. If issues found → agent fixes them → review triggers again
-3. If LGTM → loop counter resets
+2. **Hard no** — issues found → agent fixes them → review triggers again
+3. **LGTM** — loop counter resets, agent proceeds
 4. If loop count reaches `maxReviewLoops` → stops with a warning
 5. Toggling off/on with `/review` resets the counter
+
+The agent cannot push, skip, or ignore the review. It loops until it gets an LGTM or hits the ceiling.
 
 ### Architect review
 
